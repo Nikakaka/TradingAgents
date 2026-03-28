@@ -1,5 +1,8 @@
+import json
 import questionary
 from typing import List, Optional, Tuple, Dict
+from urllib.request import urlopen
+from urllib.error import URLError
 
 from rich.console import Console
 
@@ -15,6 +18,32 @@ ANALYST_ORDER = [
     ("News Analyst", AnalystType.NEWS),
     ("Fundamentals Analyst", AnalystType.FUNDAMENTALS),
 ]
+
+
+def get_installed_ollama_models() -> List[str]:
+    """Return installed local Ollama models via the local API."""
+    try:
+        with urlopen("http://localhost:11434/api/tags", timeout=3) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except (URLError, TimeoutError, json.JSONDecodeError, OSError):
+        return []
+
+    models = data.get("models", [])
+    names = [model.get("name", "").strip() for model in models if model.get("name")]
+    return names
+
+
+def get_ollama_model_choices(preferred_models: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+    """Return Ollama model choices filtered to installed models when possible."""
+    installed_models = set(get_installed_ollama_models())
+    if not installed_models:
+        return preferred_models
+
+    filtered = [choice for choice in preferred_models if choice[1] in installed_models]
+    if filtered:
+        return filtered
+
+    return [(f"{name} (installed)", name) for name in sorted(installed_models)]
 
 
 def get_ticker() -> str:
@@ -139,6 +168,12 @@ def select_shallow_thinking_agent(provider) -> str:
     # Define shallow thinking llm engine options with their corresponding model names
     # Ordering: medium → light → heavy (balanced first for quick tasks)
     # Within same tier, newer models first
+    ollama_choices = get_ollama_model_choices([
+        ("Qwen3:latest (8B, local)", "qwen3:latest"),
+        ("GPT-OSS:latest (20B, local)", "gpt-oss:latest"),
+        ("GLM-4.7-Flash:latest (30B, local)", "glm-4.7-flash:latest"),
+    ])
+
     SHALLOW_AGENT_OPTIONS = {
         "openai": [
             ("GPT-5 Mini - Balanced speed, cost, and capability", "gpt-5-mini"),
@@ -162,15 +197,15 @@ def select_shallow_thinking_agent(provider) -> str:
             ("Grok 4 Fast (Non-Reasoning) - Speed optimized", "grok-4-fast-non-reasoning"),
             ("Grok 4.1 Fast (Reasoning) - High-performance, 2M ctx", "grok-4-1-fast-reasoning"),
         ],
+        "zhipu": [
+            ("GLM-4.7 - Fast general-purpose remote model", "GLM-4.7"),
+            ("GLM-4.5-Air - Lower-cost remote model", "GLM-4.5-Air"),
+        ],
         "openrouter": [
             ("NVIDIA Nemotron 3 Nano 30B (free)", "nvidia/nemotron-3-nano-30b-a3b:free"),
             ("Z.AI GLM 4.5 Air (free)", "z-ai/glm-4.5-air:free"),
         ],
-        "ollama": [
-            ("Qwen3:latest (8B, local)", "qwen3:latest"),
-            ("GPT-OSS:latest (20B, local)", "gpt-oss:latest"),
-            ("GLM-4.7-Flash:latest (30B, local)", "glm-4.7-flash:latest"),
-        ],
+        "ollama": ollama_choices,
     }
 
     choice = questionary.select(
@@ -204,6 +239,12 @@ def select_deep_thinking_agent(provider) -> str:
     # Define deep thinking llm engine options with their corresponding model names
     # Ordering: heavy → medium → light (most capable first for deep tasks)
     # Within same tier, newer models first
+    ollama_choices = get_ollama_model_choices([
+        ("GLM-4.7-Flash:latest (30B, local)", "glm-4.7-flash:latest"),
+        ("GPT-OSS:latest (20B, local)", "gpt-oss:latest"),
+        ("Qwen3:latest (8B, local)", "qwen3:latest"),
+    ])
+
     DEEP_AGENT_OPTIONS = {
         "openai": [
             ("GPT-5.4 - Latest frontier, 1M context", "gpt-5.4"),
@@ -229,15 +270,16 @@ def select_deep_thinking_agent(provider) -> str:
             ("Grok 4 Fast (Reasoning) - High-performance", "grok-4-fast-reasoning"),
             ("Grok 4.1 Fast (Non-Reasoning) - Speed optimized, 2M ctx", "grok-4-1-fast-non-reasoning"),
         ],
+        "zhipu": [
+            ("GLM-4.7 - Strong remote reasoning model", "GLM-4.7"),
+            ("GLM-4.5 - General-purpose remote model", "GLM-4.5"),
+            ("GLM-4.5-Air - Lower-cost remote model", "GLM-4.5-Air"),
+        ],
         "openrouter": [
             ("Z.AI GLM 4.5 Air (free)", "z-ai/glm-4.5-air:free"),
             ("NVIDIA Nemotron 3 Nano 30B (free)", "nvidia/nemotron-3-nano-30b-a3b:free"),
         ],
-        "ollama": [
-            ("GLM-4.7-Flash:latest (30B, local)", "glm-4.7-flash:latest"),
-            ("GPT-OSS:latest (20B, local)", "gpt-oss:latest"),
-            ("Qwen3:latest (8B, local)", "qwen3:latest"),
-        ],
+        "ollama": ollama_choices,
     }
 
     choice = questionary.select(
@@ -266,19 +308,20 @@ def select_llm_provider() -> tuple[str, str]:
     """Select the OpenAI api url using interactive selection."""
     # Define OpenAI api options with their corresponding endpoints
     BASE_URLS = [
-        ("OpenAI", "https://api.openai.com/v1"),
-        ("Google", "https://generativelanguage.googleapis.com/v1"),
-        ("Anthropic", "https://api.anthropic.com/"),
-        ("xAI", "https://api.x.ai/v1"),
-        ("Openrouter", "https://openrouter.ai/api/v1"),
-        ("Ollama", "http://localhost:11434/v1"),
+        ("OpenAI", "openai", "https://api.openai.com/v1"),
+        ("Google", "google", "https://generativelanguage.googleapis.com/v1"),
+        ("Anthropic", "anthropic", "https://api.anthropic.com/"),
+        ("xAI", "xai", "https://api.x.ai/v1"),
+        ("Zhipu GLM", "zhipu", "https://open.bigmodel.cn/api/paas/v4"),
+        ("Openrouter", "openrouter", "https://openrouter.ai/api/v1"),
+        ("Ollama", "ollama", "http://localhost:11434/v1"),
     ]
     
     choice = questionary.select(
         "Select your LLM Provider:",
         choices=[
-            questionary.Choice(display, value=(display, value))
-            for display, value in BASE_URLS
+            questionary.Choice(display, value=(provider_key, url, display))
+            for display, provider_key, url in BASE_URLS
         ],
         instruction="\n- Use arrow keys to navigate\n- Press Enter to select",
         style=questionary.Style(
@@ -294,10 +337,10 @@ def select_llm_provider() -> tuple[str, str]:
         console.print("\n[red]no OpenAI backend selected. Exiting...[/red]")
         exit(1)
     
-    display_name, url = choice
+    provider_key, url, display_name = choice
     print(f"You selected: {display_name}\tURL: {url}")
 
-    return display_name, url
+    return provider_key, url
 
 
 def ask_openai_reasoning_effort() -> str:

@@ -29,7 +29,7 @@ def create_social_media_analyst(llm):
                     " will help where you left off. Execute what you can to make progress."
                     " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
                     " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
-                    " You have access to the following tools: {tool_names}.\n{system_message}"
+                    " You have access to the following tools: {tool_names}.\n{system_message}\n"
                     "For your reference, the current date is {current_date}. {instrument_context}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),

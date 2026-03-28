@@ -1,5 +1,6 @@
 from typing import Optional
 import datetime
+import sys
 import typer
 from pathlib import Path
 from functools import wraps
@@ -25,12 +26,39 @@ from rich.rule import Rule
 
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.llm_clients.factory import create_llm_client
 from cli.models import AnalystType
 from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
 from cli.stats_handler import StatsCallbackHandler
 
-console = Console()
+
+def _configure_stdio():
+    """Use UTF-8 for stdio when possible and avoid hard crashes on unsupported chars."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+def terminal_safe(text) -> str:
+    """Replace characters unsupported by the active terminal encoding."""
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+    except Exception:
+        return text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
+
+
+_configure_stdio()
+console = Console(emoji=False, safe_box=True)
 
 app = typer.Typer(
     name="TradingAgents",
@@ -257,7 +285,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     layout["header"].update(
         Panel(
             "[bold green]Welcome to TradingAgents CLI[/bold green]\n"
-            "[dim]© [Tauric Research](https://github.com/TauricResearch)[/dim]",
+            "[dim]by [Tauric Research](https://github.com/TauricResearch)[/dim]",
             title="Welcome to TradingAgents",
             border_style="green",
             padding=(1, 2),
@@ -270,7 +298,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
         show_header=True,
         header_style="bold magenta",
         show_footer=False,
-        box=box.SIMPLE_HEAD,  # Use simple header with horizontal lines
+        box=box.ASCII,  # ASCII-only for Windows terminal compatibility
         title=None,  # Remove the redundant Progress title
         padding=(0, 2),  # Add horizontal padding
         expand=True,  # Make table expand to fill available space
@@ -336,7 +364,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
             progress_table.add_row("", agent, status_cell)
 
         # Add horizontal line after each team
-        progress_table.add_row("─" * 20, "─" * 20, "─" * 20, style="dim")
+        progress_table.add_row("-" * 20, "-" * 20, "-" * 20, style="dim")
 
     layout["progress"].update(
         Panel(progress_table, title="Progress", border_style="cyan", padding=(1, 2))
@@ -348,7 +376,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
         header_style="bold magenta",
         show_footer=False,
         expand=True,  # Make table expand to fill available space
-        box=box.MINIMAL,  # Use minimal box style for a lighter look
+        box=box.ASCII,  # ASCII-only for Windows terminal compatibility
         show_lines=True,  # Keep horizontal lines
         padding=(0, 1),  # Add some padding between columns
     )
@@ -364,11 +392,11 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     # Add tool calls
     for timestamp, tool_name, args in message_buffer.tool_calls:
         formatted_args = format_tool_args(args)
-        all_messages.append((timestamp, "Tool", f"{tool_name}: {formatted_args}"))
+        all_messages.append((timestamp, "Tool", terminal_safe(f"{tool_name}: {formatted_args}")))
 
     # Add regular messages
     for timestamp, msg_type, content in message_buffer.messages:
-        content_str = str(content) if content else ""
+        content_str = terminal_safe(content)
         if len(content_str) > 200:
             content_str = content_str[:197] + "..."
         all_messages.append((timestamp, msg_type, content_str))
@@ -385,7 +413,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     # Add messages to table (already in newest-first order)
     for timestamp, msg_type, content in recent_messages:
         # Format content with word wrapping
-        wrapped_content = Text(content, overflow="fold")
+        wrapped_content = Text(terminal_safe(content), overflow="fold")
         messages_table.add_row(timestamp, msg_type, wrapped_content)
 
     layout["messages"].update(
@@ -401,7 +429,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     if message_buffer.current_report:
         layout["analysis"].update(
             Panel(
-                Markdown(message_buffer.current_report),
+                Markdown(terminal_safe(message_buffer.current_report)),
                 title="Current Report",
                 border_style="green",
                 padding=(1, 2),
@@ -439,7 +467,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
 
         # Token display with graceful fallback
         if stats["tokens_in"] > 0 or stats["tokens_out"] > 0:
-            tokens_str = f"Tokens: {format_tokens(stats['tokens_in'])}\u2191 {format_tokens(stats['tokens_out'])}\u2193"
+            tokens_str = f"Tokens: in {format_tokens(stats['tokens_in'])} / out {format_tokens(stats['tokens_out'])}"
         else:
             tokens_str = "Tokens: --"
         stats_parts.append(tokens_str)
@@ -449,7 +477,7 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     # Elapsed time
     if start_time:
         elapsed = time.time() - start_time
-        elapsed_str = f"\u23f1 {int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
+        elapsed_str = f"Time {int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
         stats_parts.append(elapsed_str)
 
     stats_table = Table(show_header=False, box=None, padding=(0, 2), expand=True)
@@ -462,14 +490,14 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
 def get_user_selections():
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
-    with open(Path(__file__).parent / "static" / "welcome.txt", "r") as f:
+    with open(Path(__file__).parent / "static" / "welcome.txt", "r", encoding="utf-8") as f:
         welcome_ascii = f.read()
 
     # Create welcome box content
     welcome_content = f"{welcome_ascii}\n"
     welcome_content += "[bold green]TradingAgents: Multi-Agents LLM Financial Trading Framework - CLI[/bold green]\n\n"
     welcome_content += "[bold]Workflow Steps:[/bold]\n"
-    welcome_content += "I. Analyst Team → II. Research Team → III. Trader → IV. Risk Management → V. Portfolio Management\n\n"
+    welcome_content += "I. Analyst Team -> II. Research Team -> III. Trader -> IV. Risk Management -> V. Portfolio Management\n\n"
     welcome_content += (
         "[dim]Built by [Tauric Research](https://github.com/TauricResearch)[/dim]"
     )
@@ -503,7 +531,7 @@ def get_user_selections():
         create_question_box(
             "Step 1: Ticker Symbol",
             "Enter the exact ticker symbol to analyze, including exchange suffix when needed (examples: SPY, CNC.TO, 7203.T, 0700.HK)",
-            "SPY",
+            "9988.HK",
         )
     )
     selected_ticker = get_ticker()
@@ -603,7 +631,7 @@ def get_user_selections():
 
 def get_ticker():
     """Get ticker symbol from user input."""
-    return typer.prompt("", default="SPY")
+    return typer.prompt("", default="9988.HK")
 
 
 def get_analysis_date():
@@ -625,100 +653,149 @@ def get_analysis_date():
             )
 
 
-def save_report_to_disk(final_state, ticker: str, save_path: Path):
-    """Save complete analysis report to disk with organized subfolders."""
-    save_path.mkdir(parents=True, exist_ok=True)
+def build_complete_report_markdown(final_state, ticker: str) -> str:
+    """Build a consolidated Markdown report from the final graph state."""
     sections = []
 
-    # 1. Analysts
-    analysts_dir = save_path / "1_analysts"
     analyst_parts = []
     if final_state.get("market_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "market.md").write_text(final_state["market_report"])
         analyst_parts.append(("Market Analyst", final_state["market_report"]))
     if final_state.get("sentiment_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"])
         analyst_parts.append(("Social Analyst", final_state["sentiment_report"]))
     if final_state.get("news_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "news.md").write_text(final_state["news_report"])
         analyst_parts.append(("News Analyst", final_state["news_report"]))
     if final_state.get("fundamentals_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"])
         analyst_parts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
     if analyst_parts:
         content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
         sections.append(f"## I. Analyst Team Reports\n\n{content}")
 
-    # 2. Research
     if final_state.get("investment_debate_state"):
-        research_dir = save_path / "2_research"
         debate = final_state["investment_debate_state"]
         research_parts = []
         if debate.get("bull_history"):
-            research_dir.mkdir(exist_ok=True)
-            (research_dir / "bull.md").write_text(debate["bull_history"])
             research_parts.append(("Bull Researcher", debate["bull_history"]))
         if debate.get("bear_history"):
-            research_dir.mkdir(exist_ok=True)
-            (research_dir / "bear.md").write_text(debate["bear_history"])
             research_parts.append(("Bear Researcher", debate["bear_history"]))
         if debate.get("judge_decision"):
-            research_dir.mkdir(exist_ok=True)
-            (research_dir / "manager.md").write_text(debate["judge_decision"])
             research_parts.append(("Research Manager", debate["judge_decision"]))
         if research_parts:
             content = "\n\n".join(f"### {name}\n{text}" for name, text in research_parts)
             sections.append(f"## II. Research Team Decision\n\n{content}")
 
-    # 3. Trading
     if final_state.get("trader_investment_plan"):
-        trading_dir = save_path / "3_trading"
-        trading_dir.mkdir(exist_ok=True)
-        (trading_dir / "trader.md").write_text(final_state["trader_investment_plan"])
         sections.append(f"## III. Trading Team Plan\n\n### Trader\n{final_state['trader_investment_plan']}")
 
-    # 4. Risk Management
     if final_state.get("risk_debate_state"):
-        risk_dir = save_path / "4_risk"
         risk = final_state["risk_debate_state"]
         risk_parts = []
         if risk.get("aggressive_history"):
-            risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "aggressive.md").write_text(risk["aggressive_history"])
             risk_parts.append(("Aggressive Analyst", risk["aggressive_history"]))
         if risk.get("conservative_history"):
-            risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "conservative.md").write_text(risk["conservative_history"])
             risk_parts.append(("Conservative Analyst", risk["conservative_history"]))
         if risk.get("neutral_history"):
-            risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "neutral.md").write_text(risk["neutral_history"])
             risk_parts.append(("Neutral Analyst", risk["neutral_history"]))
         if risk_parts:
             content = "\n\n".join(f"### {name}\n{text}" for name, text in risk_parts)
             sections.append(f"## IV. Risk Management Team Decision\n\n{content}")
 
-        # 5. Portfolio Manager
+        if risk.get("judge_decision"):
+            sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{risk['judge_decision']}")
+
+    header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    return header + "\n\n".join(sections)
+
+
+def translate_report_to_chinese(report_markdown: str, selections: dict) -> Optional[str]:
+    """Translate the consolidated Markdown report into Simplified Chinese."""
+    provider = selections.get("llm_provider")
+    model = selections.get("deep_thinker") or selections.get("shallow_thinker")
+    if not provider or not model:
+        return None
+
+    client = create_llm_client(provider, model, selections.get("backend_url"))
+    llm = client.get_llm()
+    prompt = (
+        "Translate the following financial analysis report into Simplified Chinese.\n"
+        "Preserve the Markdown structure, headings, tables, lists, ticker symbols, dates, numbers, "
+        "percentages, currencies, and inline code formatting exactly where possible.\n"
+        "Do not omit any content.\n"
+        "Keep machine-relevant labels unchanged when they appear, especially "
+        "`FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**`, `Buy`, `Sell`, `Hold`, `Overweight`, and `Underweight`.\n"
+        "Return only the translated Markdown.\n\n"
+        f"{report_markdown}"
+    )
+    response = llm.invoke(prompt)
+    translated_text = getattr(response, "content", None)
+    if isinstance(translated_text, str) and translated_text.strip():
+        return translated_text
+    raise ValueError("Translation response was empty.")
+
+
+def save_report_to_disk(final_state, ticker: str, save_path: Path, translated_report: Optional[str] = None):
+    """Save complete analysis report to disk with organized subfolders."""
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    analysts_dir = save_path / "1_analysts"
+    if final_state.get("market_report"):
+        analysts_dir.mkdir(exist_ok=True)
+        (analysts_dir / "market.md").write_text(final_state["market_report"], encoding="utf-8")
+    if final_state.get("sentiment_report"):
+        analysts_dir.mkdir(exist_ok=True)
+        (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"], encoding="utf-8")
+    if final_state.get("news_report"):
+        analysts_dir.mkdir(exist_ok=True)
+        (analysts_dir / "news.md").write_text(final_state["news_report"], encoding="utf-8")
+    if final_state.get("fundamentals_report"):
+        analysts_dir.mkdir(exist_ok=True)
+        (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"], encoding="utf-8")
+
+    if final_state.get("investment_debate_state"):
+        research_dir = save_path / "2_research"
+        debate = final_state["investment_debate_state"]
+        if debate.get("bull_history"):
+            research_dir.mkdir(exist_ok=True)
+            (research_dir / "bull.md").write_text(debate["bull_history"], encoding="utf-8")
+        if debate.get("bear_history"):
+            research_dir.mkdir(exist_ok=True)
+            (research_dir / "bear.md").write_text(debate["bear_history"], encoding="utf-8")
+        if debate.get("judge_decision"):
+            research_dir.mkdir(exist_ok=True)
+            (research_dir / "manager.md").write_text(debate["judge_decision"], encoding="utf-8")
+
+    if final_state.get("trader_investment_plan"):
+        trading_dir = save_path / "3_trading"
+        trading_dir.mkdir(exist_ok=True)
+        (trading_dir / "trader.md").write_text(final_state["trader_investment_plan"], encoding="utf-8")
+
+    if final_state.get("risk_debate_state"):
+        risk_dir = save_path / "4_risk"
+        risk = final_state["risk_debate_state"]
+        if risk.get("aggressive_history"):
+            risk_dir.mkdir(exist_ok=True)
+            (risk_dir / "aggressive.md").write_text(risk["aggressive_history"], encoding="utf-8")
+        if risk.get("conservative_history"):
+            risk_dir.mkdir(exist_ok=True)
+            (risk_dir / "conservative.md").write_text(risk["conservative_history"], encoding="utf-8")
+        if risk.get("neutral_history"):
+            risk_dir.mkdir(exist_ok=True)
+            (risk_dir / "neutral.md").write_text(risk["neutral_history"], encoding="utf-8")
         if risk.get("judge_decision"):
             portfolio_dir = save_path / "5_portfolio"
             portfolio_dir.mkdir(exist_ok=True)
-            (portfolio_dir / "decision.md").write_text(risk["judge_decision"])
-            sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{risk['judge_decision']}")
+            (portfolio_dir / "decision.md").write_text(risk["judge_decision"], encoding="utf-8")
 
-    # Write consolidated report
-    header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    (save_path / "complete_report.md").write_text(header + "\n\n".join(sections))
-    return save_path / "complete_report.md"
+    report_file = save_path / "complete_report.md"
+    report_file.write_text(build_complete_report_markdown(final_state, ticker), encoding="utf-8")
+    if translated_report:
+        (save_path / "complete_report_zh.md").write_text(translated_report, encoding="utf-8")
+    return report_file
 
 
-def display_complete_report(final_state):
+def display_complete_report(final_state, translated_report: Optional[str] = None):
     """Display the complete analysis report sequentially (avoids truncation)."""
     console.print()
-    console.print(Rule("Complete Analysis Report", style="bold green"))
+    console.print(Rule("Complete Analysis Report", style="bold green", characters="-"))
 
     # I. Analyst Team Reports
     analysts = []
@@ -733,7 +810,7 @@ def display_complete_report(final_state):
     if analysts:
         console.print(Panel("[bold]I. Analyst Team Reports[/bold]", border_style="cyan"))
         for title, content in analysts:
-            console.print(Panel(Markdown(content), title=title, border_style="blue", padding=(1, 2)))
+            console.print(Panel(Markdown(terminal_safe(content)), title=title, border_style="blue", padding=(1, 2)))
 
     # II. Research Team Reports
     if final_state.get("investment_debate_state"):
@@ -748,12 +825,12 @@ def display_complete_report(final_state):
         if research:
             console.print(Panel("[bold]II. Research Team Decision[/bold]", border_style="magenta"))
             for title, content in research:
-                console.print(Panel(Markdown(content), title=title, border_style="blue", padding=(1, 2)))
+                console.print(Panel(Markdown(terminal_safe(content)), title=title, border_style="blue", padding=(1, 2)))
 
     # III. Trading Team
     if final_state.get("trader_investment_plan"):
         console.print(Panel("[bold]III. Trading Team Plan[/bold]", border_style="yellow"))
-        console.print(Panel(Markdown(final_state["trader_investment_plan"]), title="Trader", border_style="blue", padding=(1, 2)))
+        console.print(Panel(Markdown(terminal_safe(final_state["trader_investment_plan"])), title="Trader", border_style="blue", padding=(1, 2)))
 
     # IV. Risk Management Team
     if final_state.get("risk_debate_state"):
@@ -768,12 +845,16 @@ def display_complete_report(final_state):
         if risk_reports:
             console.print(Panel("[bold]IV. Risk Management Team Decision[/bold]", border_style="red"))
             for title, content in risk_reports:
-                console.print(Panel(Markdown(content), title=title, border_style="blue", padding=(1, 2)))
+                console.print(Panel(Markdown(terminal_safe(content)), title=title, border_style="blue", padding=(1, 2)))
 
         # V. Portfolio Manager Decision
         if risk.get("judge_decision"):
             console.print(Panel("[bold]V. Portfolio Manager Decision[/bold]", border_style="green"))
-            console.print(Panel(Markdown(risk["judge_decision"]), title="Portfolio Manager", border_style="blue", padding=(1, 2)))
+            console.print(Panel(Markdown(terminal_safe(risk["judge_decision"])), title="Portfolio Manager", border_style="blue", padding=(1, 2)))
+
+    if translated_report:
+        console.print(Panel("[bold]Chinese Translation[/bold]", border_style="green"))
+        console.print(Panel(Markdown(terminal_safe(translated_report)), title="Complete Report (ZH)", border_style="blue", padding=(1, 2)))
 
 
 def update_research_team_status(status):
@@ -968,7 +1049,7 @@ def run_analysis():
             func(*args, **kwargs)
             timestamp, message_type, content = obj.messages[-1]
             content = content.replace("\n", " ")  # Replace newlines with spaces
-            with open(log_file, "a") as f:
+            with open(log_file, "a", encoding="utf-8") as f:
                 f.write(f"{timestamp} [{message_type}] {content}\n")
         return wrapper
     
@@ -979,7 +1060,7 @@ def run_analysis():
             func(*args, **kwargs)
             timestamp, tool_name, args = obj.tool_calls[-1]
             args_str = ", ".join(f"{k}={v}" for k, v in args.items())
-            with open(log_file, "a") as f:
+            with open(log_file, "a", encoding="utf-8") as f:
                 f.write(f"{timestamp} [Tool Call] {tool_name}({args_str})\n")
         return wrapper
 
@@ -993,7 +1074,7 @@ def run_analysis():
                 if content:
                     file_name = f"{section_name}.md"
                     text = "\n".join(str(item) for item in content) if isinstance(content, list) else content
-                    with open(report_dir / file_name, "w") as f:
+                    with open(report_dir / file_name, "w", encoding="utf-8") as f:
                         f.write(text)
         return wrapper
 
@@ -1162,6 +1243,13 @@ def run_analysis():
 
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
+    translated_report = None
+    try:
+        complete_report_markdown = build_complete_report_markdown(final_state, selections["ticker"])
+        translated_report = translate_report_to_chinese(complete_report_markdown, selections)
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not generate Chinese translation: {e}[/yellow]")
+
     # Post-analysis prompts (outside Live context for clean interaction)
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
 
@@ -1176,16 +1264,18 @@ def run_analysis():
         ).strip()
         save_path = Path(save_path_str)
         try:
-            report_file = save_report_to_disk(final_state, selections["ticker"], save_path)
-            console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
+            report_file = save_report_to_disk(final_state, selections["ticker"], save_path, translated_report)
+            console.print(f"\n[green]Report saved to:[/green] {save_path.resolve()}")
             console.print(f"  [dim]Complete report:[/dim] {report_file.name}")
+            if translated_report:
+                console.print("  [dim]Chinese report:[/dim] complete_report_zh.md")
         except Exception as e:
             console.print(f"[red]Error saving report: {e}[/red]")
 
     # Prompt to display full report
     display_choice = typer.prompt("\nDisplay full report on screen?", default="Y").strip().upper()
     if display_choice in ("Y", "YES", ""):
-        display_complete_report(final_state)
+        display_complete_report(final_state, translated_report)
 
 
 @app.command()

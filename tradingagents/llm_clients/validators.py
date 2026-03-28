@@ -48,6 +48,12 @@ VALID_MODELS = {
         "grok-4-fast-reasoning",
         "grok-4-fast-non-reasoning",
     ],
+    "zhipu": [
+        "GLM-4.7",
+        "GLM-4.5",
+        "GLM-4.5-Air",
+        "GLM-4-Air-250414",
+    ],
 }
 
 

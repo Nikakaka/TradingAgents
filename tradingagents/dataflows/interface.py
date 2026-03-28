@@ -22,7 +22,12 @@ from .alpha_vantage import (
     get_news as get_alpha_vantage_news,
     get_global_news as get_alpha_vantage_global_news,
 )
+from .akshare_hk import (
+    get_stock_data as get_akshare_hk_stock,
+    get_indicator as get_akshare_hk_indicator,
+)
 from .alpha_vantage_common import AlphaVantageRateLimitError
+from yfinance.exceptions import YFRateLimitError
 
 # Configuration and routing logic
 from .config import get_config
@@ -61,6 +66,7 @@ TOOLS_CATEGORIES = {
 }
 
 VENDOR_LIST = [
+    "akshare",
     "yfinance",
     "alpha_vantage",
 ]
@@ -69,11 +75,13 @@ VENDOR_LIST = [
 VENDOR_METHODS = {
     # core_stock_apis
     "get_stock_data": {
+        "akshare": get_akshare_hk_stock,
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
     },
     # technical_indicators
     "get_indicators": {
+        "akshare": get_akshare_hk_indicator,
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
     },
@@ -156,7 +164,12 @@ def route_to_vendor(method: str, *args, **kwargs):
 
         try:
             return impl_func(*args, **kwargs)
-        except AlphaVantageRateLimitError:
-            continue  # Only rate limits trigger fallback
+        except (AlphaVantageRateLimitError, YFRateLimitError):
+            continue
+        except ValueError as exc:
+            # Alpha Vantage is optional; skip it when the API key is not configured.
+            if vendor == "alpha_vantage" and "ALPHA_VANTAGE_API_KEY" in str(exc):
+                continue
+            raise
 
     raise RuntimeError(f"No available vendor for '{method}'")

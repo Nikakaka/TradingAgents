@@ -8,10 +8,10 @@ DEFAULT_CONFIG = {
         "dataflows/data_cache",
     ),
     # LLM settings
-    "llm_provider": "openai",
-    "deep_think_llm": "gpt-5.2",
-    "quick_think_llm": "gpt-5-mini",
-    "backend_url": "https://api.openai.com/v1",
+    "llm_provider": "zhipu",
+    "deep_think_llm": "GLM-4.7",
+    "quick_think_llm": "GLM-4.7",
+    "backend_url": "https://open.bigmodel.cn/api/paas/v4",
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
@@ -23,10 +23,12 @@ DEFAULT_CONFIG = {
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
-        "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance
-        "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
-        "fundamental_data": "yfinance",      # Options: alpha_vantage, yfinance
-        "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+        # Prefer yfinance for broader exchange coverage (including HK suffixes),
+        # then fall back to Alpha Vantage when configured.
+        "core_stock_apis": "akshare,yfinance,alpha_vantage",
+        "technical_indicators": "akshare,yfinance,alpha_vantage",
+        "fundamental_data": "yfinance,alpha_vantage",
+        "news_data": "yfinance,alpha_vantage",
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
