@@ -18,15 +18,12 @@ from tradingagents.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_global_news
 )
+from tradingagents.market_utils import build_instrument_context_text
 
 
 def build_instrument_context(ticker: str) -> str:
     """Describe the exact instrument so agents preserve exchange-qualified tickers."""
-    return (
-        f"The instrument to analyze is `{ticker}`. "
-        "Use this exact ticker in every tool call, report, and recommendation, "
-        "preserving any exchange suffix (e.g. `.TO`, `.L`, `.HK`, `.T`)."
-    )
+    return build_instrument_context_text(ticker)
 
 def create_msg_delete():
     def delete_messages(state):

@@ -11,6 +11,12 @@ from .y_finance import (
     get_insider_transactions as get_yfinance_insider_transactions,
 )
 from .yfinance_news import get_news_yfinance, get_global_news_yfinance
+from .akshare_fundamentals import (
+    get_fundamentals as get_akshare_fundamentals,
+    get_balance_sheet as get_akshare_balance_sheet,
+    get_cashflow as get_akshare_cashflow,
+    get_income_statement as get_akshare_income_statement,
+)
 from .alpha_vantage import (
     get_stock as get_alpha_vantage_stock,
     get_indicator as get_alpha_vantage_indicator,
@@ -25,6 +31,10 @@ from .alpha_vantage import (
 from .akshare_hk import (
     get_stock_data as get_akshare_hk_stock,
     get_indicator as get_akshare_hk_indicator,
+)
+from .akshare_cn import (
+    get_stock_data as get_akshare_cn_stock,
+    get_indicator as get_akshare_cn_indicator,
 )
 from .alpha_vantage_common import AlphaVantageRateLimitError
 from yfinance.exceptions import YFRateLimitError
@@ -75,30 +85,34 @@ VENDOR_LIST = [
 VENDOR_METHODS = {
     # core_stock_apis
     "get_stock_data": {
-        "akshare": get_akshare_hk_stock,
+        "akshare": [get_akshare_hk_stock, get_akshare_cn_stock],
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
     },
     # technical_indicators
     "get_indicators": {
-        "akshare": get_akshare_hk_indicator,
+        "akshare": [get_akshare_hk_indicator, get_akshare_cn_indicator],
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
     },
     # fundamental_data
     "get_fundamentals": {
+        "akshare": get_akshare_fundamentals,
         "alpha_vantage": get_alpha_vantage_fundamentals,
         "yfinance": get_yfinance_fundamentals,
     },
     "get_balance_sheet": {
+        "akshare": get_akshare_balance_sheet,
         "alpha_vantage": get_alpha_vantage_balance_sheet,
         "yfinance": get_yfinance_balance_sheet,
     },
     "get_cashflow": {
+        "akshare": get_akshare_cashflow,
         "alpha_vantage": get_alpha_vantage_cashflow,
         "yfinance": get_yfinance_cashflow,
     },
     "get_income_statement": {
+        "akshare": get_akshare_income_statement,
         "alpha_vantage": get_alpha_vantage_income_statement,
         "yfinance": get_yfinance_income_statement,
     },
@@ -144,6 +158,7 @@ def route_to_vendor(method: str, *args, **kwargs):
     category = get_category_for_method(method)
     vendor_config = get_vendor(category, method)
     primary_vendors = [v.strip() for v in vendor_config.split(',')]
+    symbol = args[0] if args else kwargs.get("ticker") or kwargs.get("symbol")
 
     if method not in VENDOR_METHODS:
         raise ValueError(f"Method '{method}' not supported")
@@ -160,16 +175,19 @@ def route_to_vendor(method: str, *args, **kwargs):
             continue
 
         vendor_impl = VENDOR_METHODS[method][vendor]
-        impl_func = vendor_impl[0] if isinstance(vendor_impl, list) else vendor_impl
+        impl_funcs = vendor_impl if isinstance(vendor_impl, list) else [vendor_impl]
 
-        try:
-            return impl_func(*args, **kwargs)
-        except (AlphaVantageRateLimitError, YFRateLimitError):
-            continue
-        except ValueError as exc:
-            # Alpha Vantage is optional; skip it when the API key is not configured.
-            if vendor == "alpha_vantage" and "ALPHA_VANTAGE_API_KEY" in str(exc):
+        for impl_func in impl_funcs:
+            try:
+                return impl_func(*args, **kwargs)
+            except (AlphaVantageRateLimitError, YFRateLimitError):
                 continue
-            raise
+            except ValueError as exc:
+                # Alpha Vantage is optional; skip it when the API key is not configured.
+                if vendor == "alpha_vantage" and "ALPHA_VANTAGE_API_KEY" in str(exc):
+                    continue
+                if vendor == "akshare" and symbol:
+                    continue
+                raise
 
     raise RuntimeError(f"No available vendor for '{method}'")

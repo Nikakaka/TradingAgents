@@ -27,7 +27,7 @@ DEFAULT_CONFIG = {
         # then fall back to Alpha Vantage when configured.
         "core_stock_apis": "akshare,yfinance,alpha_vantage",
         "technical_indicators": "akshare,yfinance,alpha_vantage",
-        "fundamental_data": "yfinance,alpha_vantage",
+        "fundamental_data": "akshare,yfinance,alpha_vantage",
         "news_data": "yfinance,alpha_vantage",
     },
     # Tool-level configuration (takes precedence over category-level)

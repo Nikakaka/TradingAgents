@@ -1,8 +1,10 @@
 """yfinance-based news data fetching functions."""
 
 import yfinance as yf
+import akshare as ak
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from tradingagents.market_utils import get_default_news_queries, get_market_info
 
 
 def _extract_article_data(article: dict) -> dict:
@@ -46,6 +48,40 @@ def _extract_article_data(article: dict) -> dict:
         }
 
 
+def _get_company_name_aliases(ticker: str) -> list[str]:
+    info = get_market_info(ticker)
+    aliases: list[str] = []
+
+    try:
+        if info.market == "cn_a" and info.akshare_symbol:
+            profile = ak.stock_individual_info_em(symbol=info.akshare_symbol)
+            if profile is not None and not profile.empty:
+                value_map = {
+                    str(row["item"]).strip(): str(row["value"]).strip()
+                    for _, row in profile.iterrows()
+                }
+                for key in ("股票简称", "股票名称"):
+                    value = value_map.get(key)
+                    if value:
+                        aliases.append(value)
+        elif info.market == "hk" and info.akshare_symbol:
+            profile = ak.stock_hk_company_profile_em(symbol=info.akshare_symbol)
+            if profile is not None and not profile.empty:
+                row = profile.iloc[0]
+                for key in ("公司名称", "英文名称"):
+                    value = str(row.get(key, "")).strip()
+                    if value:
+                        aliases.append(value)
+    except Exception:
+        pass
+
+    deduped: list[str] = []
+    for alias in aliases:
+        if alias and alias not in deduped:
+            deduped.append(alias)
+    return deduped
+
+
 def get_news_yfinance(
     ticker: str,
     start_date: str,
@@ -63,11 +99,29 @@ def get_news_yfinance(
         Formatted string containing news articles
     """
     try:
-        stock = yf.Ticker(ticker)
-        news = stock.get_news(count=20)
+        market_info = get_market_info(ticker)
+        news = []
+
+        # First try the provider-native ticker endpoint.
+        stock = yf.Ticker(market_info.yfinance_symbol)
+        try:
+            news = stock.get_news(count=20) or []
+        except Exception:
+            news = []
+
+        # For CN/HK names, ticker-only lookup often misses coverage; retry with search aliases.
+        if not news:
+            for query in get_default_news_queries(ticker) + _get_company_name_aliases(ticker):
+                try:
+                    search = yf.Search(query=query, news_count=20, enable_fuzzy_query=True)
+                    if search.news:
+                        news = search.news
+                        break
+                except Exception:
+                    continue
 
         if not news:
-            return f"No news found for {ticker}"
+            return f"No news found for {market_info.canonical_ticker}"
 
         # Parse date range for filtering
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -94,9 +148,9 @@ def get_news_yfinance(
             filtered_count += 1
 
         if filtered_count == 0:
-            return f"No news found for {ticker} between {start_date} and {end_date}"
+            return f"No news found for {market_info.canonical_ticker} between {start_date} and {end_date}"
 
-        return f"## {ticker} News, from {start_date} to {end_date}:\n\n{news_str}"
+        return f"## {market_info.canonical_ticker} News, from {start_date} to {end_date}:\n\n{news_str}"
 
     except Exception as e:
         return f"Error fetching news for {ticker}: {str(e)}"

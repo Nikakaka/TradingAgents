@@ -7,10 +7,12 @@ from urllib.error import URLError
 from rich.console import Console
 
 from cli.models import AnalystType
+from tradingagents.market_utils import resolve_ticker_input
+from tradingagents.market_utils import load_symbol_index, search_symbol_candidates
 
 console = Console()
 
-TICKER_INPUT_EXAMPLES = "Examples: SPY, CNC.TO, 7203.T, 0700.HK"
+TICKER_INPUT_EXAMPLES = "Examples: SPY, 9988.HK, 0700, 600519, 腾讯, 阿里巴巴, 贵州茅台"
 
 ANALYST_ORDER = [
     ("Market Analyst", AnalystType.MARKET),
@@ -63,12 +65,33 @@ def get_ticker() -> str:
         console.print("\n[red]No ticker symbol provided. Exiting...[/red]")
         exit(1)
 
-    return normalize_ticker_symbol(ticker)
+    if any(not ch.isascii() for ch in ticker):
+        symbol_index = load_symbol_index()
+        candidates = search_symbol_candidates(ticker, symbol_index=symbol_index, limit=8)
+        if len(candidates) > 1:
+            choice = questionary.select(
+                "Multiple matches found. Select the intended listing:",
+                choices=[
+                    questionary.Choice(
+                        f"{item['name']} ({item['canonical_ticker']})",
+                        value=item["canonical_ticker"],
+                    )
+                    for item in candidates
+                ],
+                style=questionary.Style(
+                    [
+                        ("selected", "fg:green noinherit"),
+                        ("highlighted", "fg:green noinherit"),
+                        ("pointer", "fg:green noinherit"),
+                    ]
+                ),
+            ).ask()
+            if choice:
+                return choice
 
+        return resolve_ticker_input(ticker, symbol_index=symbol_index)
 
-def normalize_ticker_symbol(ticker: str) -> str:
-    """Normalize ticker input while preserving exchange suffixes."""
-    return ticker.strip().upper()
+    return resolve_ticker_input(ticker)
 
 
 def get_analysis_date() -> str:

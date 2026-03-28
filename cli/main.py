@@ -530,7 +530,7 @@ def get_user_selections():
     console.print(
         create_question_box(
             "Step 1: Ticker Symbol",
-            "Enter the exact ticker symbol to analyze, including exchange suffix when needed (examples: SPY, CNC.TO, 7203.T, 0700.HK)",
+            "Enter the ticker or company name to analyze. Bare HK/A-share codes and common CN/HK company names are supported too (examples: SPY, 9988.HK, 0700, 600519, \u817e\u8baf, \u963f\u91cc\u5df4\u5df4, \u8d35\u5dde\u8305\u53f0)",
             "9988.HK",
         )
     )
@@ -631,7 +631,7 @@ def get_user_selections():
 
 def get_ticker():
     """Get ticker symbol from user input."""
-    return typer.prompt("", default="9988.HK")
+    return resolve_ticker_input(typer.prompt("", default="9988.HK"))
 
 
 def get_analysis_date():

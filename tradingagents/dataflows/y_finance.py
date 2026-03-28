@@ -4,6 +4,7 @@ from dateutil.relativedelta import relativedelta
 import yfinance as yf
 import os
 from .stockstats_utils import StockstatsUtils, _clean_dataframe, yf_retry
+from tradingagents.market_utils import get_market_info
 
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
@@ -14,8 +15,8 @@ def get_YFin_data_online(
     datetime.strptime(start_date, "%Y-%m-%d")
     datetime.strptime(end_date, "%Y-%m-%d")
 
-    # Create ticker object
-    ticker = yf.Ticker(symbol.upper())
+    market_info = get_market_info(symbol)
+    ticker = yf.Ticker(market_info.yfinance_symbol)
 
     # Fetch historical data for the specified date range
     data = yf_retry(lambda: ticker.history(start=start_date, end=end_date))
@@ -40,7 +41,7 @@ def get_YFin_data_online(
     csv_string = data.to_csv()
 
     # Add header information
-    header = f"# Stock data for {symbol.upper()} from {start_date} to {end_date}\n"
+    header = f"# Stock data for {market_info.canonical_ticker} from {start_date} to {end_date}\n"
     header += f"# Total records: {len(data)}\n"
     header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
@@ -54,6 +55,8 @@ def get_stock_stats_indicators_window(
     ],
     look_back_days: Annotated[int, "how many days to look back"],
 ) -> str:
+    market_info = get_market_info(symbol)
+    symbol = market_info.canonical_ticker
 
     best_ind_params = {
         # Moving Averages
@@ -200,6 +203,7 @@ def _get_stock_stats_bulk(
     import os
     
     config = get_config()
+    market_info = get_market_info(symbol)
     online = config["data_vendors"]["technical_indicators"] != "local"
     
     if not online:
@@ -208,7 +212,7 @@ def _get_stock_stats_bulk(
             data = pd.read_csv(
                 os.path.join(
                     config.get("data_cache_dir", "data"),
-                    f"{symbol}-YFin-data-2015-01-01-2025-03-25.csv",
+                    f"{market_info.yfinance_symbol}-YFin-data-2015-01-01-2025-03-25.csv",
                 ),
                 on_bad_lines="skip",
             )
@@ -228,14 +232,14 @@ def _get_stock_stats_bulk(
 
         data_file = os.path.join(
             config["data_cache_dir"],
-            f"{symbol}-YFin-data-{start_date_str}-{end_date_str}.csv",
+            f"{market_info.yfinance_symbol}-YFin-data-{start_date_str}-{end_date_str}.csv",
         )
 
         if os.path.exists(data_file):
             data = pd.read_csv(data_file, on_bad_lines="skip")
         else:
             data = yf_retry(lambda: yf.download(
-                symbol,
+                market_info.yfinance_symbol,
                 start=start_date_str,
                 end=end_date_str,
                 multi_level_index=False,
@@ -299,11 +303,12 @@ def get_fundamentals(
 ):
     """Get company fundamentals overview from yfinance."""
     try:
-        ticker_obj = yf.Ticker(ticker.upper())
+        market_info = get_market_info(ticker)
+        ticker_obj = yf.Ticker(market_info.yfinance_symbol)
         info = yf_retry(lambda: ticker_obj.info)
 
         if not info:
-            return f"No fundamentals data found for symbol '{ticker}'"
+            return f"No fundamentals data found for symbol '{market_info.canonical_ticker}'"
 
         fields = [
             ("Name", info.get("longName")),
@@ -341,7 +346,7 @@ def get_fundamentals(
             if value is not None:
                 lines.append(f"{label}: {value}")
 
-        header = f"# Company Fundamentals for {ticker.upper()}\n"
+        header = f"# Company Fundamentals for {market_info.canonical_ticker}\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
         return header + "\n".join(lines)
@@ -357,7 +362,8 @@ def get_balance_sheet(
 ):
     """Get balance sheet data from yfinance."""
     try:
-        ticker_obj = yf.Ticker(ticker.upper())
+        market_info = get_market_info(ticker)
+        ticker_obj = yf.Ticker(market_info.yfinance_symbol)
 
         if freq.lower() == "quarterly":
             data = yf_retry(lambda: ticker_obj.quarterly_balance_sheet)
@@ -365,13 +371,13 @@ def get_balance_sheet(
             data = yf_retry(lambda: ticker_obj.balance_sheet)
             
         if data.empty:
-            return f"No balance sheet data found for symbol '{ticker}'"
+            return f"No balance sheet data found for symbol '{market_info.canonical_ticker}'"
             
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
         
         # Add header information
-        header = f"# Balance Sheet data for {ticker.upper()} ({freq})\n"
+        header = f"# Balance Sheet data for {market_info.canonical_ticker} ({freq})\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         return header + csv_string
@@ -387,7 +393,8 @@ def get_cashflow(
 ):
     """Get cash flow data from yfinance."""
     try:
-        ticker_obj = yf.Ticker(ticker.upper())
+        market_info = get_market_info(ticker)
+        ticker_obj = yf.Ticker(market_info.yfinance_symbol)
 
         if freq.lower() == "quarterly":
             data = yf_retry(lambda: ticker_obj.quarterly_cashflow)
@@ -395,13 +402,13 @@ def get_cashflow(
             data = yf_retry(lambda: ticker_obj.cashflow)
             
         if data.empty:
-            return f"No cash flow data found for symbol '{ticker}'"
+            return f"No cash flow data found for symbol '{market_info.canonical_ticker}'"
             
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
         
         # Add header information
-        header = f"# Cash Flow data for {ticker.upper()} ({freq})\n"
+        header = f"# Cash Flow data for {market_info.canonical_ticker} ({freq})\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         return header + csv_string
@@ -417,7 +424,8 @@ def get_income_statement(
 ):
     """Get income statement data from yfinance."""
     try:
-        ticker_obj = yf.Ticker(ticker.upper())
+        market_info = get_market_info(ticker)
+        ticker_obj = yf.Ticker(market_info.yfinance_symbol)
 
         if freq.lower() == "quarterly":
             data = yf_retry(lambda: ticker_obj.quarterly_income_stmt)
@@ -425,13 +433,13 @@ def get_income_statement(
             data = yf_retry(lambda: ticker_obj.income_stmt)
             
         if data.empty:
-            return f"No income statement data found for symbol '{ticker}'"
+            return f"No income statement data found for symbol '{market_info.canonical_ticker}'"
             
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
         
         # Add header information
-        header = f"# Income Statement data for {ticker.upper()} ({freq})\n"
+        header = f"# Income Statement data for {market_info.canonical_ticker} ({freq})\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         return header + csv_string
@@ -445,17 +453,18 @@ def get_insider_transactions(
 ):
     """Get insider transactions data from yfinance."""
     try:
-        ticker_obj = yf.Ticker(ticker.upper())
+        market_info = get_market_info(ticker)
+        ticker_obj = yf.Ticker(market_info.yfinance_symbol)
         data = yf_retry(lambda: ticker_obj.insider_transactions)
-        
+
         if data is None or data.empty:
-            return f"No insider transactions data found for symbol '{ticker}'"
+            return f"No insider transactions data found for symbol '{market_info.canonical_ticker}'"
             
         # Convert to CSV string for consistency with other functions
         csv_string = data.to_csv()
         
         # Add header information
-        header = f"# Insider Transactions data for {ticker.upper()}\n"
+        header = f"# Insider Transactions data for {market_info.canonical_ticker}\n"
         header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
         
         return header + csv_string

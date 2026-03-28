@@ -1,7 +1,73 @@
-import time
-import json
+import re
 
 from tradingagents.agents.utils.agent_utils import build_instrument_context
+
+
+def _sanitize_for_provider(text: str, max_chars: int = 6000) -> str:
+    """Reduce provider filter risk by removing noisy or quote-heavy content."""
+    if not text:
+        return ""
+
+    sanitized = str(text)
+    replacements = {
+        "Bull Analyst:": "View A:",
+        "Bear Analyst:": "View B:",
+        "bull analyst": "view A",
+        "bear analyst": "view B",
+        "bull case": "positive case",
+        "bear case": "risk case",
+        "debate": "discussion",
+    }
+    for src, dst in replacements.items():
+        sanitized = sanitized.replace(src, dst)
+
+    sanitized = re.sub(r"https?://\S+", "[link]", sanitized)
+    sanitized = re.sub(r"\b\S+@\S+\b", "[email]", sanitized)
+    sanitized = re.sub(r"`{1,3}.*?`{1,3}", "[quoted text]", sanitized, flags=re.DOTALL)
+    sanitized = re.sub(r"[ \t]+", " ", sanitized)
+
+    if len(sanitized) > max_chars:
+        sanitized = sanitized[:max_chars]
+
+    return sanitized.strip()
+
+
+def _build_primary_prompt(instrument_context: str, past_memory_str: str, history: str) -> str:
+    return f"""You are the research lead responsible for combining two contrasting investment viewpoints into one practical decision for the trader.
+
+Review View A and View B, then decide which side is better supported by the evidence. Choose Buy, Sell, or Hold. Use Hold only when the available evidence is genuinely mixed or insufficient.
+
+Write a clear decision note with:
+1. Recommendation: Buy, Sell, or Hold.
+2. Key supporting evidence from both viewpoints.
+3. Rationale for the final decision.
+4. Practical next steps for the trader.
+
+Use lessons from similar past situations to improve the decision, but keep the tone professional, calm, and focused on financial analysis.
+
+Past reflections:
+"{past_memory_str}"
+
+{instrument_context}
+
+Discussion history:
+{history}"""
+
+
+def _build_fallback_prompt(instrument_context: str, history: str) -> str:
+    return f"""Review the following investment discussion and provide a calm financial summary.
+
+Return:
+1. Recommendation: Buy, Sell, or Hold.
+2. Two or three key reasons.
+3. Practical next step for the trader.
+
+Keep the response concise and professional.
+
+{instrument_context}
+
+Discussion:
+{history}"""
 
 
 def create_research_manager(llm, memory):
@@ -19,29 +85,30 @@ def create_research_manager(llm, memory):
         past_memories = memory.get_memories(curr_situation, n_matches=2)
 
         past_memory_str = ""
-        for i, rec in enumerate(past_memories, 1):
+        for rec in past_memories:
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""As the portfolio manager and debate facilitator, your role is to critically evaluate this round of debate and make a definitive decision: align with the bear analyst, the bull analyst, or choose Hold only if it is strongly justified based on the arguments presented.
+        sanitized_history = _sanitize_for_provider(history)
+        sanitized_memories = _sanitize_for_provider(past_memory_str, max_chars=2000)
 
-Summarize the key points from both sides concisely, focusing on the most compelling evidence or reasoning. Your recommendation—Buy, Sell, or Hold—must be clear and actionable. Avoid defaulting to Hold simply because both sides have valid points; commit to a stance grounded in the debate's strongest arguments.
+        primary_prompt = _build_primary_prompt(
+            instrument_context=instrument_context,
+            past_memory_str=sanitized_memories,
+            history=sanitized_history,
+        )
 
-Additionally, develop a detailed investment plan for the trader. This should include:
+        try:
+            response = llm.invoke(primary_prompt)
+        except Exception as exc:
+            error_text = str(exc)
+            if "1301" not in error_text and "contentFilter" not in error_text:
+                raise
 
-Your Recommendation: A decisive stance supported by the most convincing arguments.
-Rationale: An explanation of why these arguments lead to your conclusion.
-Strategic Actions: Concrete steps for implementing the recommendation.
-Take into account your past mistakes on similar situations. Use these insights to refine your decision-making and ensure you are learning and improving. Present your analysis conversationally, as if speaking naturally, without special formatting. 
-
-Here are your past reflections on mistakes:
-\"{past_memory_str}\"
-
-{instrument_context}
-
-Here is the debate:
-Debate History:
-{history}"""
-        response = llm.invoke(prompt)
+            fallback_prompt = _build_fallback_prompt(
+                instrument_context=instrument_context,
+                history=_sanitize_for_provider(history, max_chars=2500),
+            )
+            response = llm.invoke(fallback_prompt)
 
         new_investment_debate_state = {
             "judge_decision": response.content,
