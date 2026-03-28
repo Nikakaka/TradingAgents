@@ -1023,17 +1023,21 @@ class JobManager:
 
                 final_state = trace[-1]
                 translated_report = None
+                translation_warning = None
                 if payload.get("translate_to_chinese", True):
                     complete_report = build_complete_report_markdown(final_state, ticker)
-                    translated_report = translate_report_to_chinese(
-                        complete_report,
-                        {
-                            "llm_provider": config["llm_provider"],
-                            "deep_thinker": config["deep_think_llm"],
-                            "shallow_thinker": config["quick_think_llm"],
-                            "backend_url": config["backend_url"],
-                        },
-                    )
+                    try:
+                        translated_report = translate_report_to_chinese(
+                            complete_report,
+                            {
+                                "llm_provider": config["llm_provider"],
+                                "deep_thinker": config["deep_think_llm"],
+                                "shallow_thinker": config["quick_think_llm"],
+                                "backend_url": config["backend_url"],
+                            },
+                        )
+                    except Exception as exc:
+                        translation_warning = f"Chinese translation skipped: {exc}"
 
                 report_id = f"{ticker}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 report_path = REPORTS_DIR / report_id
@@ -1050,6 +1054,7 @@ class JobManager:
                     "ticker": ticker,
                     "decision": _extract_rating(decision_text),
                     "analysis_date": analysis_date,
+                    "warning": translation_warning,
                 },
             )
         except Exception as exc:

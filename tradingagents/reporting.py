@@ -5,6 +5,65 @@ from typing import Optional
 from tradingagents.llm_clients.factory import create_llm_client
 
 
+def _extract_text_from_llm_response(response) -> str:
+    """Best-effort extraction of text from varied LangChain/provider responses."""
+    if response is None:
+        return ""
+
+    def _from_value(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, list):
+            parts = []
+            for item in value:
+                if isinstance(item, str):
+                    text = item.strip()
+                elif isinstance(item, dict):
+                    block_type = str(item.get("type") or "").lower()
+                    if block_type and block_type not in {"text", "output_text"}:
+                        text = ""
+                    else:
+                        text = str(
+                            item.get("text")
+                            or item.get("output_text")
+                            or item.get("content")
+                            or ""
+                        ).strip()
+                else:
+                    text = str(getattr(item, "text", "") or getattr(item, "content", "")).strip()
+                if text:
+                    parts.append(text)
+            return "\n".join(parts).strip()
+        if isinstance(value, dict):
+            for key in ("text", "output_text", "content"):
+                text = _from_value(value.get(key))
+                if text:
+                    return text
+            return ""
+        if hasattr(value, "text") or hasattr(value, "content") or hasattr(value, "output_text"):
+            return str(
+                getattr(value, "text", None)
+                or getattr(value, "content", None)
+                or getattr(value, "output_text", None)
+                or ""
+            ).strip()
+        return ""
+
+    for candidate in (
+        getattr(response, "content", None),
+        getattr(response, "text", None),
+        getattr(response, "output_text", None),
+        getattr(response, "additional_kwargs", None),
+        response,
+    ):
+        text = _from_value(candidate)
+        if text:
+            return text
+    return ""
+
+
 def build_complete_report_markdown(final_state, ticker: str) -> str:
     """Build a consolidated Markdown report from the final graph state."""
     sections = []
@@ -78,10 +137,10 @@ def translate_report_to_chinese(report_markdown: str, selections: dict) -> Optio
         f"{report_markdown}"
     )
     response = llm.invoke(prompt)
-    translated_text = getattr(response, "content", None)
-    if isinstance(translated_text, str) and translated_text.strip():
+    translated_text = _extract_text_from_llm_response(response)
+    if translated_text:
         return translated_text
-    raise ValueError("Translation response was empty.")
+    raise ValueError(f"Translation response was empty for provider='{provider}' model='{model}'.")
 
 
 def save_report_to_disk(final_state, ticker: str, save_path: Path, translated_report: Optional[str] = None):
