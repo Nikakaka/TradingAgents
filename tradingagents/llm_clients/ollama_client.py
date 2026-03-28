@@ -64,6 +64,25 @@ class RequestChatOllama(BaseChatModel):
                 response.raise_for_status()
                 data = response.json()
                 break
+            except requests.exceptions.HTTPError as exc:
+                status_code = exc.response.status_code if exc.response is not None else None
+                body = ""
+                if exc.response is not None:
+                    try:
+                        body = exc.response.text.strip()
+                    except Exception:
+                        body = ""
+
+                if status_code is not None and status_code >= 500:
+                    last_error = RuntimeError(
+                        f"Ollama server error {status_code} for model '{self.model}'. "
+                        f"Response: {body[:400]}"
+                    )
+                    if attempt >= self.max_retries:
+                        raise last_error
+                    time.sleep(self.retry_backoff * (attempt + 1))
+                    continue
+                raise
             except requests.exceptions.ReadTimeout as exc:
                 last_error = exc
                 if attempt >= self.max_retries:

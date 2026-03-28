@@ -30,6 +30,9 @@ ASSET_DIR = APP_DIR / "web_assets"
 REPORTS_DIR = Path.cwd() / "reports"
 SYMBOL_INDEX = None
 API_KEY_ENV_LOCK = threading.Lock()
+REPORT_DISPLAY_NAME_OVERRIDES = {
+    "159934.SZ": "黄金9999（代理：黄金ETF）",
+}
 
 ANALYST_OPTIONS = [
     {"id": "market", "label": "Market Analyst"},
@@ -222,12 +225,22 @@ def _get_symbol_index() -> list[dict]:
 
 def _get_display_name(ticker: str) -> str:
     canonical = ticker.strip().upper()
+    if canonical in REPORT_DISPLAY_NAME_OVERRIDES:
+        return REPORT_DISPLAY_NAME_OVERRIDES[canonical]
     for entry in _get_symbol_index():
         if entry.get("canonical_ticker", "").upper() == canonical:
             name = str(entry.get("name", "")).strip()
-            if name:
+            if name and not _looks_mojibake(name):
                 return name
     return canonical
+
+
+def _extract_ticker_from_report_id(report_id: str) -> str:
+    report_id = (report_id or "").strip().upper()
+    match = re.match(r"^([A-Z0-9]+(?:\.[A-Z]+)?)_", report_id)
+    if match:
+        return match.group(1)
+    return report_id.rsplit("_", 2)[0]
 
 
 def _serialize_symbol_candidates(user_input: str) -> List[Dict[str, str]]:
@@ -251,18 +264,28 @@ def _serialize_symbol_candidates(user_input: str) -> List[Dict[str, str]]:
 def get_ui_options() -> Dict[str, Any]:
     models = dict(MODEL_OPTIONS)
     models["ollama"] = _ollama_model_options()
-    ollama_defaults = models["ollama"]
-    default_provider = "ollama"
-    default_quick = ollama_defaults["quick"][0] if ollama_defaults["quick"] else DEFAULT_CONFIG["quick_think_llm"]
-    default_deep = _pick_preferred_model(
-        ollama_defaults["deep"],
-        ["glm-4.7", "glm-4.7-flash", "glm-4.7:latest", "glm-4.7-flash:latest"],
-    ) or default_quick
+    default_provider = (DEFAULT_CONFIG["llm_provider"] or "ollama").lower()
+    provider_models = models.get(default_provider) or models["ollama"]
+    default_quick = DEFAULT_CONFIG["quick_think_llm"]
+    default_deep = DEFAULT_CONFIG["deep_think_llm"]
+    if default_provider == "ollama":
+        default_quick = _pick_preferred_model(
+            provider_models.get("quick") or [],
+            ["glm-4.7-flash:latest", "glm-4.7-flash", "glm-4.7:latest", "glm-4.7", "gpt-oss:latest"],
+        ) or default_quick
+        default_deep = _pick_preferred_model(
+            provider_models.get("deep") or [],
+            ["glm-4.7-flash:latest", "glm-4.7-flash", "glm-4.7:latest", "glm-4.7"],
+        ) or default_deep
     model_defaults = {}
     for provider, provider_models in models.items():
-        provider_quick = (provider_models.get("quick") or [default_quick])[0]
-        provider_deep = (provider_models.get("deep") or [default_deep])[0]
+        provider_quick = DEFAULT_CONFIG["quick_think_llm"] if provider == default_provider else (provider_models.get("quick") or [default_quick])[0]
+        provider_deep = DEFAULT_CONFIG["deep_think_llm"] if provider == default_provider else (provider_models.get("deep") or [default_deep])[0]
         if provider == "ollama":
+            provider_quick = _pick_preferred_model(
+                provider_models.get("quick") or [],
+                ["glm-4.7-flash:latest", "glm-4.7-flash", "glm-4.7:latest", "glm-4.7", "gpt-oss:latest"],
+            ) or provider_quick
             provider_deep = _pick_preferred_model(
                 provider_models.get("deep") or [],
                 ["glm-4.7-flash:latest", "glm-4.7-flash", "glm-4.7:latest", "glm-4.7"],
@@ -344,6 +367,31 @@ def _preferred_chinese_summary(text: str) -> str:
             summary = _extract_bullets_or_sentences(match.group("body"))
             if summary:
                 return summary
+    prose_lines = []
+    metric_lines = []
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("#", "|", "---", "```")):
+            continue
+        if re.match(r"^(?:生成时间|分析日期|股票代码|Ticker|Symbol)\s*[:：]", stripped, flags=re.IGNORECASE):
+            continue
+        plain_line = _markdown_to_plain_text(stripped)
+        if len(plain_line) < 12:
+            continue
+        if re.match(r"^(?:当前价格|日涨跌幅|成交量|换手率|价格数据|价格区间|关键点位|50日|200日|MACD|RSI|布林带)\s*[:：]", plain_line):
+            metric_lines.append(plain_line)
+            continue
+        if re.search(r"[。！？；]", plain_line):
+            prose_lines.append(plain_line)
+        else:
+            metric_lines.append(plain_line)
+    candidate_lines = prose_lines or metric_lines
+    if candidate_lines:
+        summary = _extract_bullets_or_sentences("\n".join(candidate_lines[:6]))
+        if summary:
+            return summary
     return ""
 
 
@@ -440,6 +488,7 @@ def _extract_report_highlights(text: str) -> str:
 
 def _clean_summary_text(text: str) -> str:
     summary = _markdown_to_plain_text(text or "")
+    summary = summary.replace("¥", "￥")
     summary = re.sub(r"\s+", " ", summary).strip()
     summary = summary.replace("**", "").replace("`", "")
     summary = re.sub(r"^(?:交易分析报告|分析报告)\s*[:：-]?\s*", "", summary)
@@ -472,8 +521,8 @@ def _extract_preferred_summary(translated_text: str, decision_text: str, fallbac
 
     return (
         translated_summary
-        or decision_summary
         or fallback_summary
+        or decision_summary
         or _extract_bullets_or_sentences(fallback_text)
         or _markdown_to_plain_text(fallback_text)
     )
@@ -655,10 +704,11 @@ def markdown_to_html(markdown_text: str) -> str:
 
 def load_report_list() -> List[Dict[str, Any]]:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    reports = []
+    latest_by_ticker: Dict[str, Dict[str, Any]] = {}
     for folder in sorted(REPORTS_DIR.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True):
         if not folder.is_dir():
             continue
+        ticker = _extract_ticker_from_report_id(folder.name)
         decision_text = ""
         decision_path = folder / "5_portfolio" / "decision.md"
         if decision_path.exists():
@@ -667,29 +717,36 @@ def load_report_list() -> List[Dict[str, Any]]:
         complete_text = complete_path.read_text(encoding="utf-8", errors="ignore") if complete_path.exists() else ""
         translated_path = folder / "complete_report_zh.md"
         translated_text = translated_path.read_text(encoding="utf-8", errors="ignore") if translated_path.exists() else ""
-        preferred_report_text = translated_text or complete_text
+        usable_translation = bool(translated_text and not _looks_mojibake(translated_text))
+        preferred_report_text = translated_text if usable_translation else complete_text
         list_summary = _summarize_report_excerpt(
             _extract_preferred_summary(translated_text, decision_text, preferred_report_text)
         )
-        reports.append(
-            {
-                "id": folder.name,
-                "ticker": folder.name.rsplit("_", 2)[0],
-                "display_name": _get_display_name(folder.name.rsplit("_", 2)[0]),
-                "created_at": _parse_report_timestamp(folder.name, folder.stat().st_mtime),
-                "decision": _extract_rating(decision_text or preferred_report_text),
-                "summary": list_summary,
-                "has_translation": translated_path.exists(),
-                "report_language": "zh" if translated_text else "en",
-                "sections": {
-                    "analysts": (folder / "1_analysts").exists(),
-                    "research": (folder / "2_research").exists(),
-                    "trading": (folder / "3_trading").exists(),
-                    "risk": (folder / "4_risk").exists(),
-                    "portfolio": (folder / "5_portfolio").exists(),
-                },
-            }
-        )
+        report_item = {
+            "id": folder.name,
+            "ticker": ticker,
+            "display_name": _get_display_name(ticker),
+            "created_at": _parse_report_timestamp(folder.name, folder.stat().st_mtime),
+            "decision": _extract_rating(decision_text or preferred_report_text),
+            "summary": list_summary,
+            "has_translation": usable_translation,
+            "report_language": "zh" if usable_translation else "en",
+            "sections": {
+                "analysts": (folder / "1_analysts").exists(),
+                "research": (folder / "2_research").exists(),
+                "trading": (folder / "3_trading").exists(),
+                "risk": (folder / "4_risk").exists(),
+                "portfolio": (folder / "5_portfolio").exists(),
+            },
+            "_sort_mtime": folder.stat().st_mtime,
+        }
+        current = latest_by_ticker.get(ticker)
+        if current is None or report_item["_sort_mtime"] > current["_sort_mtime"]:
+            latest_by_ticker[ticker] = report_item
+
+    reports = sorted(latest_by_ticker.values(), key=lambda item: item["_sort_mtime"], reverse=True)
+    for item in reports:
+        item.pop("_sort_mtime", None)
     return reports
 
 
@@ -714,10 +771,10 @@ def load_report_detail(report_id: str) -> Dict[str, Any]:
     ]
 
     sections = []
-    for key, title, path in section_specs:
-        if not path.exists():
+    for key, title, path_obj in section_specs:
+        if not path_obj.exists():
             continue
-        content = path.read_text(encoding="utf-8", errors="ignore")
+        content = path_obj.read_text(encoding="utf-8", errors="ignore")
         sections.append(
             {
                 "key": key,
@@ -734,27 +791,29 @@ def load_report_detail(report_id: str) -> Dict[str, Any]:
     complete_text = complete_path.read_text(encoding="utf-8", errors="ignore") if complete_path.exists() else ""
     translated_path = report_dir / "complete_report_zh.md"
     translated_text = translated_path.read_text(encoding="utf-8", errors="ignore") if translated_path.exists() else ""
-    preferred_full_text = translated_text or complete_text
+    usable_translation = bool(translated_text and not _looks_mojibake(translated_text))
+    preferred_full_text = translated_text if usable_translation else complete_text
     detail_summary = (
         _preferred_text_excerpt(
             _extract_preferred_summary(translated_text, decision_text, preferred_full_text),
             600,
         )
-        if translated_text
-        else "该历史报告暂无中文完整报告。"
+        if usable_translation
+        else "当前记录缺少可用的中文完整报告。"
     )
 
+    ticker = _extract_ticker_from_report_id(report_id)
     return {
         "id": report_id,
-        "ticker": report_id.rsplit("_", 2)[0],
-        "display_name": _get_display_name(report_id.rsplit("_", 2)[0]),
+        "ticker": ticker,
+        "display_name": _get_display_name(ticker),
         "created_at": _parse_report_timestamp(report_id, report_dir.stat().st_mtime),
         "decision": _extract_rating(decision_text or preferred_full_text),
         "executive_summary": detail_summary,
-        "investment_thesis": "当前右侧仅展示中文完整报告。" if translated_text else "当前记录缺少中文完整报告。",
+        "investment_thesis": "当前记录优先展示中文完整报告。" if usable_translation else "当前记录仅提供英文完整报告。",
         "full_report_html": markdown_to_html(preferred_full_text),
-        "translated_report_html": markdown_to_html(translated_text) if translated_text else "",
-        "has_translation": bool(translated_text),
+        "translated_report_html": markdown_to_html(translated_text) if usable_translation else "",
+        "has_translation": usable_translation,
         "sections": sections,
     }
 

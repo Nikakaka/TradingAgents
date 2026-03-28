@@ -1,6 +1,14 @@
-from langchain_core.messages import AIMessage
-import time
-import json
+import re
+
+
+def _sanitize_report(text: str, max_chars: int = 3500) -> str:
+    if not text:
+        return ""
+    sanitized = re.sub(r"https?://\S+", "[link]", str(text))
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized[:max_chars]
+
+
 def create_bull_researcher(llm, memory):
     def bull_node(state) -> dict:
         investment_debate_state = state["investment_debate_state"]
@@ -20,29 +28,29 @@ def create_bull_researcher(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""You are a Bull Analyst advocating for investing in the stock. Your task is to build a strong, evidence-based case emphasizing growth potential, competitive advantages, and positive market indicators. Leverage the provided research and data to address concerns and counter bearish arguments effectively.
+        prompt = f"""You are the Supportive Analyst for this investment review. Build a concise, evidence-based case for the more constructive interpretation of the stock, focusing on growth potential, competitive strengths, and favorable market signals.
 
 Key points to focus on:
 - Growth Potential: Highlight the company's market opportunities, revenue projections, and scalability.
 - Competitive Advantages: Emphasize factors like unique products, strong branding, or dominant market positioning.
 - Positive Indicators: Use financial health, industry trends, and recent positive news as evidence.
-- Bear Counterpoints: Critically analyze the bear argument with specific data and sound reasoning, addressing concerns thoroughly and showing why the bull perspective holds stronger merit.
-- Engagement: Present your argument in a conversational style, engaging directly with the bear analyst's points and debating effectively rather than just listing data.
+- Risk Counterpoints: Critically analyze the risk view with specific data and sound reasoning, addressing concerns thoroughly and showing why the constructive perspective has merit.
+- Output Style: Keep the response practical, neutral in tone, and easy for another analyst to summarize.
 
 Resources available:
-Market research report: {market_research_report}
-Social media sentiment report: {sentiment_report}
-Latest world affairs news: {news_report}
-Company fundamentals report: {fundamentals_report}
-Conversation history of the debate: {history}
-Last bear argument: {current_response}
+Market research report: {_sanitize_report(market_research_report)}
+Social media sentiment report: {_sanitize_report(sentiment_report)}
+Latest world affairs news: {_sanitize_report(news_report)}
+Company fundamentals report: {_sanitize_report(fundamentals_report)}
+Conversation history of the discussion: {_sanitize_report(history, max_chars=1500)}
+Last risk view: {_sanitize_report(current_response, max_chars=1200)}
 Reflections from similar situations and lessons learned: {past_memory_str}
-Use this information to deliver a compelling bull argument, refute the bear's concerns, and engage in a dynamic debate that demonstrates the strengths of the bull position. You must also address reflections and learn from lessons and mistakes you made in the past.
+Use this information to deliver a strong supportive view, address the main risks, and incorporate useful lessons from similar past situations.
 """
 
         response = llm.invoke(prompt)
 
-        argument = f"Bull Analyst: {response.content}"
+        argument = f"Supportive View: {response.content}"
 
         new_investment_debate_state = {
             "history": history + "\n" + argument,

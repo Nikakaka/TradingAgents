@@ -1,6 +1,31 @@
-from langchain_core.messages import AIMessage
-import time
-import json
+import re
+
+
+def _sanitize_report(text: str, max_chars: int = 2500) -> str:
+    if not text:
+        return ""
+    sanitized = str(text)
+    replacements = {
+        "Aggressive Analyst:": "Growth-Focused View:",
+        "Conservative Analyst:": "Risk-Control View:",
+        "Neutral Analyst:": "Balanced View:",
+        "FINAL TRANSACTION PROPOSAL": "FINAL RECOMMENDATION",
+    }
+    for src, dst in replacements.items():
+        sanitized = sanitized.replace(src, dst)
+    sanitized = re.sub(r"https?://\S+", "[link]", sanitized)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized[:max_chars]
+
+
+def _fallback_argument(trader_decision: str) -> str:
+    summary = _sanitize_report(trader_decision, max_chars=900) or "Research summary requires manual review."
+    return (
+        "Conservative Analyst: Recommendation review from a capital-protection perspective.\n"
+        "- Focus on downside containment and avoid oversized conviction.\n"
+        f"- Current plan summary: {summary}\n"
+        "- Prefer smaller sizing or waiting for stronger confirmation before increasing exposure."
+    )
 
 
 def create_conservative_debator(llm):
@@ -16,26 +41,48 @@ def create_conservative_debator(llm):
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
-
         trader_decision = state["trader_investment_plan"]
 
-        prompt = f"""As the Conservative Risk Analyst, your primary objective is to protect assets, minimize volatility, and ensure steady, reliable growth. You prioritize stability, security, and risk mitigation, carefully assessing potential losses, economic downturns, and market volatility. When evaluating the trader's decision or plan, critically examine high-risk elements, pointing out where the decision may expose the firm to undue risk and where more cautious alternatives could secure long-term gains. Here is the trader's decision:
+        prompt = f"""You are the capital-protection risk reviewer.
 
-{trader_decision}
+Provide a short note from a conservative perspective. Focus on:
+- downside risks that could break the trade,
+- balance-sheet or macro risks that deserve caution,
+- practical controls such as smaller size, tighter risk limits, or waiting for confirmation.
 
-Your task is to actively counter the arguments of the Aggressive and Neutral Analysts, highlighting where their views may overlook potential threats or fail to prioritize sustainability. Respond directly to their points, drawing from the following data sources to build a convincing case for a low-risk approach adjustment to the trader's decision:
+Keep the tone factual and professional. Do not argue with other analysts.
 
-Market Research Report: {market_research_report}
-Social Media Sentiment Report: {sentiment_report}
-Latest World Affairs Report: {news_report}
-Company Fundamentals Report: {fundamentals_report}
-Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
+Trader decision:
+{_sanitize_report(trader_decision, max_chars=1400)}
 
-Engage by questioning their optimism and emphasizing the potential downsides they may have overlooked. Address each of their counterpoints to showcase why a conservative stance is ultimately the safest path for the firm's assets. Focus on debating and critiquing their arguments to demonstrate the strength of a low-risk strategy over their approaches. Output conversationally as if you are speaking without any special formatting."""
+Market research:
+{_sanitize_report(market_research_report, max_chars=1000)}
 
-        response = llm.invoke(prompt)
+Sentiment:
+{_sanitize_report(sentiment_report, max_chars=800)}
 
-        argument = f"Conservative Analyst: {response.content}"
+News:
+{_sanitize_report(news_report, max_chars=800)}
+
+Fundamentals:
+{_sanitize_report(fundamentals_report, max_chars=800)}
+
+Prior discussion:
+{_sanitize_report(history, max_chars=900)}
+
+Other views:
+- Growth-focused view: {_sanitize_report(current_aggressive_response, max_chars=500)}
+- Balanced view: {_sanitize_report(current_neutral_response, max_chars=500)}
+"""
+
+        try:
+            response = llm.invoke(prompt)
+            argument = f"Conservative Analyst: {response.content}"
+        except Exception as exc:
+            error_text = str(exc)
+            if "1301" not in error_text and "contentFilter" not in error_text:
+                raise
+            argument = _fallback_argument(trader_decision)
 
         new_risk_debate_state = {
             "history": history + "\n" + argument,

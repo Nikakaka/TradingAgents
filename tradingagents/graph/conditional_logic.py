@@ -50,8 +50,28 @@ class ConditionalLogic:
             state["investment_debate_state"]["count"] >= 2 * self.max_debate_rounds
         ):  # 3 rounds of back-and-forth between 2 agents
             return "Research Manager"
-        if state["investment_debate_state"]["current_response"].startswith("Bull"):
+        current_response = (
+            state["investment_debate_state"].get("current_response", "") or ""
+        ).strip()
+        normalized = current_response.lower()
+        supportive_markers = (
+            "bull",
+            "supportive",
+            "positive case",
+            "view a",
+        )
+        risk_markers = (
+            "bear",
+            "risk",
+            "negative case",
+            "view b",
+        )
+        if normalized.startswith(supportive_markers):
             return "Bear Researcher"
+        if normalized.startswith(risk_markers):
+            return "Bull Researcher"
+        # Default to alternating into the risk side when the label is missing
+        # or too sanitized to classify reliably.
         return "Bull Researcher"
 
     def should_continue_risk_analysis(self, state: AgentState) -> str:

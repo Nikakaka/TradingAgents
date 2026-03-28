@@ -1,5 +1,31 @@
-import time
-import json
+import re
+
+
+def _sanitize_report(text: str, max_chars: int = 2500) -> str:
+    if not text:
+        return ""
+    sanitized = str(text)
+    replacements = {
+        "Aggressive Analyst:": "Growth-Focused View:",
+        "Conservative Analyst:": "Risk-Control View:",
+        "Neutral Analyst:": "Balanced View:",
+        "FINAL TRANSACTION PROPOSAL": "FINAL RECOMMENDATION",
+    }
+    for src, dst in replacements.items():
+        sanitized = sanitized.replace(src, dst)
+    sanitized = re.sub(r"https?://\S+", "[link]", sanitized)
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized[:max_chars]
+
+
+def _fallback_argument(trader_decision: str) -> str:
+    summary = _sanitize_report(trader_decision, max_chars=900) or "Research summary requires manual review."
+    return (
+        "Neutral Analyst: Recommendation review from a balanced perspective.\n"
+        "- Weigh upside and downside before changing exposure materially.\n"
+        f"- Current plan summary: {summary}\n"
+        "- Prefer staged execution and confirmation from price action or fundamentals."
+    )
 
 
 def create_neutral_debator(llm):
@@ -15,26 +41,48 @@ def create_neutral_debator(llm):
         sentiment_report = state["sentiment_report"]
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
-
         trader_decision = state["trader_investment_plan"]
 
-        prompt = f"""As the Neutral Risk Analyst, your role is to provide a balanced perspective, weighing both the potential benefits and risks of the trader's decision or plan. You prioritize a well-rounded approach, evaluating the upsides and downsides while factoring in broader market trends, potential economic shifts, and diversification strategies.Here is the trader's decision:
+        prompt = f"""You are the balanced risk reviewer.
 
-{trader_decision}
+Provide a short note from a neutral perspective. Focus on:
+- where the constructive case is credible,
+- where the downside case is still meaningful,
+- a practical middle-ground execution plan.
 
-Your task is to challenge both the Aggressive and Conservative Analysts, pointing out where each perspective may be overly optimistic or overly cautious. Use insights from the following data sources to support a moderate, sustainable strategy to adjust the trader's decision:
+Keep the tone factual and professional. Do not argue with other analysts.
 
-Market Research Report: {market_research_report}
-Social Media Sentiment Report: {sentiment_report}
-Latest World Affairs Report: {news_report}
-Company Fundamentals Report: {fundamentals_report}
-Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the conservative analyst: {current_conservative_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
+Trader decision:
+{_sanitize_report(trader_decision, max_chars=1400)}
 
-Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a more balanced approach. Challenge each of their points to illustrate why a moderate risk strategy might offer the best of both worlds, providing growth potential while safeguarding against extreme volatility. Focus on debating rather than simply presenting data, aiming to show that a balanced view can lead to the most reliable outcomes. Output conversationally as if you are speaking without any special formatting."""
+Market research:
+{_sanitize_report(market_research_report, max_chars=1000)}
 
-        response = llm.invoke(prompt)
+Sentiment:
+{_sanitize_report(sentiment_report, max_chars=800)}
 
-        argument = f"Neutral Analyst: {response.content}"
+News:
+{_sanitize_report(news_report, max_chars=800)}
+
+Fundamentals:
+{_sanitize_report(fundamentals_report, max_chars=800)}
+
+Prior discussion:
+{_sanitize_report(history, max_chars=900)}
+
+Other views:
+- Growth-focused view: {_sanitize_report(current_aggressive_response, max_chars=500)}
+- Risk-control view: {_sanitize_report(current_conservative_response, max_chars=500)}
+"""
+
+        try:
+            response = llm.invoke(prompt)
+            argument = f"Neutral Analyst: {response.content}"
+        except Exception as exc:
+            error_text = str(exc)
+            if "1301" not in error_text and "contentFilter" not in error_text:
+                raise
+            argument = _fallback_argument(trader_decision)
 
         new_risk_debate_state = {
             "history": history + "\n" + argument,
