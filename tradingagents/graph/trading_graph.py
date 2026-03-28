@@ -121,7 +121,9 @@ class TradingAgentsGraph:
             self.conditional_logic,
         )
 
-        self.propagator = Propagator()
+        self.propagator = Propagator(
+            max_recur_limit=self.config.get("max_recur_limit", DEFAULT_CONFIG.get("max_recur_limit", 100))
+        )
         self.reflector = Reflector(self.quick_thinking_llm)
         self.signal_processor = SignalProcessor(self.quick_thinking_llm)
 
@@ -152,6 +154,15 @@ class TradingAgentsGraph:
             effort = self.config.get("anthropic_effort")
             if effort:
                 kwargs["effort"] = effort
+
+        elif provider == "ollama":
+            kwargs["timeout"] = self.config.get("ollama_timeout", 900)
+            kwargs["connect_timeout"] = self.config.get("ollama_connect_timeout", 15)
+            kwargs["max_retries"] = self.config.get("ollama_max_retries", 2)
+            kwargs["retry_backoff"] = self.config.get("ollama_retry_backoff", 2)
+            kwargs["num_ctx"] = self.config.get("ollama_num_ctx", 8192)
+            kwargs["num_predict"] = self.config.get("ollama_num_predict", 900)
+            kwargs["temperature"] = self.config.get("ollama_temperature", 0.2)
 
         return kwargs
 

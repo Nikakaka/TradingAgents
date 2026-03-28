@@ -16,10 +16,17 @@ DEFAULT_CONFIG = {
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
     "anthropic_effort": None,           # "high", "medium", "low"
+    "ollama_timeout": 900,
+    "ollama_connect_timeout": 15,
+    "ollama_max_retries": 2,
+    "ollama_retry_backoff": 2,
+    "ollama_num_ctx": 8192,
+    "ollama_num_predict": 900,
+    "ollama_temperature": 0.2,
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
-    "max_recur_limit": 100,
+    "max_recur_limit": 200,
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {

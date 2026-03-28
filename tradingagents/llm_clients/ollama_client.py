@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Any, Optional
 
 import requests
@@ -15,7 +16,11 @@ class RequestChatOllama(BaseChatModel):
 
     model: str
     base_url: str = "http://localhost:11434"
-    timeout: float = 300.0
+    timeout: float = 900.0
+    connect_timeout: float = 15.0
+    max_retries: int = 2
+    retry_backoff: float = 2.0
+    default_options: dict[str, Any] | None = None
 
     @property
     def _llm_type(self) -> str:
@@ -42,16 +47,36 @@ class RequestChatOllama(BaseChatModel):
         if tools:
             payload["tools"] = tools
 
+        options = dict(self.default_options or {})
         if stop:
-            payload["options"] = {"stop": stop}
+            options["stop"] = stop
+        if options:
+            payload["options"] = options
 
-        response = requests.post(
-            f"{self.base_url.rstrip('/')}/api/chat",
-            json=payload,
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        data = response.json()
+        last_error = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = requests.post(
+                    f"{self.base_url.rstrip('/')}/api/chat",
+                    json=payload,
+                    timeout=(self.connect_timeout, self.timeout),
+                )
+                response.raise_for_status()
+                data = response.json()
+                break
+            except requests.exceptions.ReadTimeout as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    raise
+                time.sleep(self.retry_backoff * (attempt + 1))
+            except requests.exceptions.ConnectionError as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    raise
+                time.sleep(self.retry_backoff * (attempt + 1))
+        else:
+            raise last_error or RuntimeError("Ollama request failed without a specific error.")
+
         message = data.get("message", {})
 
         ai_message = AIMessage(
@@ -109,8 +134,26 @@ class OllamaClient(BaseLLMClient):
 
     def get_llm(self) -> Any:
         base_url = self.base_url or "http://localhost:11434"
-        timeout = float(self.kwargs.get("timeout", 300))
-        return RequestChatOllama(model=self.model, base_url=base_url.rstrip("/v1"), timeout=timeout)
+        timeout = float(self.kwargs.get("timeout", 900))
+        connect_timeout = float(self.kwargs.get("connect_timeout", 15))
+        max_retries = int(self.kwargs.get("max_retries", 2))
+        retry_backoff = float(self.kwargs.get("retry_backoff", 2))
+        default_options = {
+            "num_ctx": int(self.kwargs.get("num_ctx", 8192)),
+            "num_predict": int(self.kwargs.get("num_predict", 900)),
+        }
+        temperature = self.kwargs.get("temperature")
+        if temperature is not None:
+            default_options["temperature"] = float(temperature)
+        return RequestChatOllama(
+            model=self.model,
+            base_url=base_url.rstrip("/v1"),
+            timeout=timeout,
+            connect_timeout=connect_timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+            default_options=default_options,
+        )
 
     def validate_model(self) -> bool:
         return True
