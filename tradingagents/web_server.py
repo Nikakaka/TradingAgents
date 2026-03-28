@@ -18,6 +18,7 @@ from cli.utils import get_installed_ollama_models
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.market_utils import load_symbol_index, resolve_ticker_input, search_symbol_candidates
+from tradingagents.model_registry import get_model_options, list_provider_options
 from tradingagents.reporting import (
     build_complete_report_markdown,
     save_report_to_disk,
@@ -41,98 +42,9 @@ ANALYST_OPTIONS = [
     {"id": "fundamentals", "label": "Fundamentals Analyst"},
 ]
 
-PROVIDER_OPTIONS = [
-    {
-        "id": "openai",
-        "label": "OpenAI",
-        "base_url": "https://api.openai.com/v1",
-        "api_key_label": "OpenAI API Key",
-        "api_key_placeholder": "输入 OPENAI_API_KEY",
-        "api_key_helper": "可直接覆盖当前分析任务使用的 OpenAI Key；留空时沿用本机已有环境变量。",
-        "requires_api_key": True,
-    },
-    {
-        "id": "google",
-        "label": "Google",
-        "base_url": "https://generativelanguage.googleapis.com/v1",
-        "api_key_label": "Google API Key",
-        "api_key_placeholder": "输入 GOOGLE_API_KEY",
-        "api_key_helper": "可直接覆盖当前分析任务使用的 Google Key；留空时沿用本机已有环境变量。",
-        "requires_api_key": True,
-    },
-    {
-        "id": "anthropic",
-        "label": "Anthropic",
-        "base_url": "https://api.anthropic.com/",
-        "api_key_label": "Anthropic API Key",
-        "api_key_placeholder": "输入 ANTHROPIC_API_KEY",
-        "api_key_helper": "可直接覆盖当前分析任务使用的 Anthropic Key；留空时沿用本机已有环境变量。",
-        "requires_api_key": True,
-    },
-    {
-        "id": "xai",
-        "label": "xAI",
-        "base_url": "https://api.x.ai/v1",
-        "api_key_label": "xAI API Key",
-        "api_key_placeholder": "输入 XAI_API_KEY",
-        "api_key_helper": "可直接覆盖当前分析任务使用的 xAI Key；留空时沿用本机已有环境变量。",
-        "requires_api_key": True,
-    },
-    {
-        "id": "zhipu",
-        "label": "Zhipu GLM",
-        "base_url": "https://open.bigmodel.cn/api/paas/v4",
-        "api_key_label": "智谱 API Key",
-        "api_key_placeholder": "输入 ZHIPUAI_API_KEY",
-        "api_key_helper": "可直接覆盖当前分析任务使用的智谱 Key；留空时沿用本机已有环境变量。",
-        "requires_api_key": True,
-    },
-    {
-        "id": "openrouter",
-        "label": "OpenRouter",
-        "base_url": "https://openrouter.ai/api/v1",
-        "api_key_label": "OpenRouter API Key",
-        "api_key_placeholder": "输入 OPENROUTER_API_KEY",
-        "api_key_helper": "可直接覆盖当前分析任务使用的 OpenRouter Key；留空时沿用本机已有环境变量。",
-        "requires_api_key": True,
-    },
-    {
-        "id": "ollama",
-        "label": "Ollama",
-        "base_url": "http://localhost:11434/v1",
-        "api_key_label": "Ollama 无需 API Key",
-        "api_key_placeholder": "",
-        "api_key_helper": "本地 Ollama 连接默认不需要 API Key。",
-        "requires_api_key": False,
-    },
-]
+PROVIDER_OPTIONS = list_provider_options()
 
-MODEL_OPTIONS = {
-    "openai": {
-        "quick": ["gpt-5-mini", "gpt-5-nano", "gpt-5.4", "gpt-4.1"],
-        "deep": ["gpt-5.4", "gpt-5.2", "gpt-5-mini", "gpt-5.4-pro"],
-    },
-    "anthropic": {
-        "quick": ["claude-sonnet-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"],
-        "deep": ["claude-opus-4-6", "claude-opus-4-5", "claude-sonnet-4-6", "claude-sonnet-4-5"],
-    },
-    "google": {
-        "quick": ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-2.5-flash-lite"],
-        "deep": ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"],
-    },
-    "xai": {
-        "quick": ["grok-4-1-fast-non-reasoning", "grok-4-fast-non-reasoning", "grok-4-1-fast-reasoning"],
-        "deep": ["grok-4-0709", "grok-4-1-fast-reasoning", "grok-4-fast-reasoning", "grok-4-1-fast-non-reasoning"],
-    },
-    "zhipu": {
-        "quick": ["GLM-4.7", "GLM-4.5-Air"],
-        "deep": ["GLM-4.7", "GLM-4.5", "GLM-4.5-Air"],
-    },
-    "openrouter": {
-        "quick": ["nvidia/nemotron-3-nano-30b-a3b:free", "z-ai/glm-4.5-air:free"],
-        "deep": ["z-ai/glm-4.5-air:free", "nvidia/nemotron-3-nano-30b-a3b:free"],
-    },
-}
+MODEL_OPTIONS = get_model_options()
 
 PROVIDER_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",

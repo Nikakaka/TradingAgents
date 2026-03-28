@@ -1,0 +1,8 @@
+{
+  "ticker": "9988.HK",
+  "analysis_date": "today",
+  "analysts": "market",
+  "research_depth": 1,
+  "skip_translation": false,
+  "result_json": "results/openclaw/9988_hk_smoke.json"
+}

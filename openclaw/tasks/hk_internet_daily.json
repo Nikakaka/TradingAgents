@@ -1,0 +1,42 @@
+[
+  {
+    "ticker": "0700.HK",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "skip_translation": false,
+    "result_json": "results/openclaw/0700_hk_hk_internet.json"
+  },
+  {
+    "ticker": "9988.HK",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "skip_translation": false,
+    "result_json": "results/openclaw/9988_hk_hk_internet.json"
+  },
+  {
+    "ticker": "9618.HK",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "skip_translation": false,
+    "result_json": "results/openclaw/9618_hk_hk_internet.json"
+  },
+  {
+    "ticker": "3690.HK",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "skip_translation": false,
+    "result_json": "results/openclaw/3690_hk_hk_internet.json"
+  },
+  {
+    "ticker": "1024.HK",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "skip_translation": false,
+    "result_json": "results/openclaw/1024_hk_hk_internet.json"
+  }
+]

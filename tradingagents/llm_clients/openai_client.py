@@ -102,20 +102,75 @@ def _build_safe_fallback_message(input_data: Any) -> AIMessage:
     return AIMessage(content=content)
 
 
+def _is_rate_limit_error(error_text: str) -> bool:
+    normalized = (error_text or "").lower()
+    patterns = (
+        "ratelimiterror",
+        "rate limit",
+        "error code: 429",
+        '"code": "1302"',
+        "'code': '1302'",
+        "达到速率限制",
+        "速率限制",
+    )
+    return any(pattern in normalized for pattern in patterns)
+
+
 class NormalizedChatOpenAI(ChatOpenAI):
     """ChatOpenAI with normalized content output and provider-specific retries."""
 
     _provider_name: str = PrivateAttr(default="openai")
+    _fallback_provider: Optional[str] = PrivateAttr(default=None)
+    _fallback_model: Optional[str] = PrivateAttr(default=None)
+    _fallback_base_url: Optional[str] = PrivateAttr(default=None)
+    _fallback_kwargs: dict[str, Any] = PrivateAttr(default_factory=dict)
+    _fallback_llm: Any = PrivateAttr(default=None)
 
-    def __init__(self, *args, provider: str = "openai", **kwargs):
+    def __init__(
+        self,
+        *args,
+        provider: str = "openai",
+        fallback_provider: Optional[str] = None,
+        fallback_model: Optional[str] = None,
+        fallback_base_url: Optional[str] = None,
+        fallback_kwargs: Optional[dict[str, Any]] = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self._provider_name = (provider or "openai").lower()
+        self._fallback_provider = (fallback_provider or "").lower() or None
+        self._fallback_model = fallback_model
+        self._fallback_base_url = fallback_base_url
+        self._fallback_kwargs = dict(fallback_kwargs or {})
+        self._fallback_llm = None
+
+    def _get_fallback_llm(self):
+        if not self._fallback_provider or not self._fallback_model:
+            return None
+        if self._fallback_llm is not None:
+            return self._fallback_llm
+
+        from .factory import create_llm_client
+
+        fallback_client = create_llm_client(
+            provider=self._fallback_provider,
+            model=self._fallback_model,
+            base_url=self._fallback_base_url,
+            **self._fallback_kwargs,
+        )
+        self._fallback_llm = fallback_client.get_llm()
+        return self._fallback_llm
 
     def invoke(self, input, config=None, **kwargs):
         try:
             return normalize_content(super().invoke(input, config, **kwargs))
         except Exception as exc:
             error_text = str(exc)
+            if _is_rate_limit_error(error_text):
+                fallback_llm = self._get_fallback_llm()
+                if fallback_llm is not None:
+                    fallback_response = fallback_llm.invoke(input, config=config, **kwargs)
+                    return normalize_content(fallback_response)
             if self._provider_name != "zhipu":
                 raise
             if "1301" not in error_text and "contentFilter" not in error_text:
@@ -181,7 +236,19 @@ class OpenAIClient(BaseLLMClient):
         if self.provider == "openai":
             llm_kwargs["use_responses_api"] = True
 
-        return NormalizedChatOpenAI(provider=self.provider, **llm_kwargs)
+        fallback_provider = self.kwargs.get("fallback_provider")
+        fallback_model = self.kwargs.get("fallback_model")
+        fallback_base_url = self.kwargs.get("fallback_base_url")
+        fallback_kwargs = self.kwargs.get("fallback_kwargs")
+
+        return NormalizedChatOpenAI(
+            provider=self.provider,
+            fallback_provider=fallback_provider,
+            fallback_model=fallback_model,
+            fallback_base_url=fallback_base_url,
+            fallback_kwargs=fallback_kwargs,
+            **llm_kwargs,
+        )
 
     def validate_model(self) -> bool:
         """Validate model for the provider."""

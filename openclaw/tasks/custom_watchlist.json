@@ -1,0 +1,38 @@
+[
+  {
+    "ticker": "9988.HK",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "provider": "ollama",
+    "quick_model": "gpt-oss:latest",
+    "deep_model": "glm-4.7-flash:latest",
+    "backend_url": "http://localhost:11434/v1",
+    "skip_translation": false,
+    "result_json": "results/openclaw/9988_hk_custom_watchlist.json"
+  },
+  {
+    "ticker": "300750.SZ",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "provider": "ollama",
+    "quick_model": "gpt-oss:latest",
+    "deep_model": "glm-4.7-flash:latest",
+    "backend_url": "http://localhost:11434/v1",
+    "skip_translation": false,
+    "result_json": "results/openclaw/300750_sz_custom_watchlist.json"
+  },
+  {
+    "ticker": "0700.HK",
+    "analysis_date": "today",
+    "analysts": "market,social,news,fundamentals",
+    "research_depth": 1,
+    "provider": "ollama",
+    "quick_model": "gpt-oss:latest",
+    "deep_model": "glm-4.7-flash:latest",
+    "backend_url": "http://localhost:11434/v1",
+    "skip_translation": false,
+    "result_json": "results/openclaw/0700_hk_custom_watchlist.json"
+  }
+]

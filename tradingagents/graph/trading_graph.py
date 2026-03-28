@@ -73,21 +73,37 @@ class TradingAgentsGraph:
 
         # Initialize LLMs with provider-specific thinking configuration
         llm_kwargs = self._get_provider_kwargs()
+        fallback_enabled = bool(self.config.get("rate_limit_fallback_enabled", False))
+        fallback_provider = str(self.config.get("rate_limit_fallback_provider") or "").lower()
+        fallback_backend_url = self.config.get("rate_limit_fallback_backend_url")
+        fallback_quick_model = self.config.get("rate_limit_fallback_quick_think_llm")
+        fallback_deep_model = self.config.get("rate_limit_fallback_deep_think_llm")
+        fallback_kwargs = self._get_specific_provider_kwargs(fallback_provider) if fallback_enabled and fallback_provider else {}
 
         # Add callbacks to kwargs if provided (passed to LLM constructor)
         if self.callbacks:
             llm_kwargs["callbacks"] = self.callbacks
+            if fallback_kwargs:
+                fallback_kwargs["callbacks"] = self.callbacks
 
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["deep_think_llm"],
             base_url=self.config.get("backend_url"),
+            fallback_provider=fallback_provider if fallback_enabled else None,
+            fallback_model=fallback_deep_model if fallback_enabled else None,
+            fallback_base_url=fallback_backend_url if fallback_enabled else None,
+            fallback_kwargs=fallback_kwargs if fallback_enabled else None,
             **llm_kwargs,
         )
         quick_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["quick_think_llm"],
             base_url=self.config.get("backend_url"),
+            fallback_provider=fallback_provider if fallback_enabled else None,
+            fallback_model=fallback_quick_model if fallback_enabled else None,
+            fallback_base_url=fallback_backend_url if fallback_enabled else None,
+            fallback_kwargs=fallback_kwargs if fallback_enabled else None,
             **llm_kwargs,
         )
 
@@ -137,25 +153,27 @@ class TradingAgentsGraph:
 
     def _get_provider_kwargs(self) -> Dict[str, Any]:
         """Get provider-specific kwargs for LLM client creation."""
-        kwargs = {}
         provider = self.config.get("llm_provider", "").lower()
+        return self._get_specific_provider_kwargs(provider)
 
-        if provider == "google":
+    def _get_specific_provider_kwargs(self, provider: str) -> Dict[str, Any]:
+        """Get provider-specific kwargs for a given provider name."""
+        provider_lower = (provider or "").lower()
+        kwargs: Dict[str, Any] = {}
+
+        if provider_lower == "google":
             thinking_level = self.config.get("google_thinking_level")
             if thinking_level:
                 kwargs["thinking_level"] = thinking_level
-
-        elif provider == "openai":
+        elif provider_lower == "openai":
             reasoning_effort = self.config.get("openai_reasoning_effort")
             if reasoning_effort:
                 kwargs["reasoning_effort"] = reasoning_effort
-
-        elif provider == "anthropic":
+        elif provider_lower == "anthropic":
             effort = self.config.get("anthropic_effort")
             if effort:
                 kwargs["effort"] = effort
-
-        elif provider == "ollama":
+        elif provider_lower == "ollama":
             kwargs["timeout"] = self.config.get("ollama_timeout", 900)
             kwargs["connect_timeout"] = self.config.get("ollama_connect_timeout", 15)
             kwargs["max_retries"] = self.config.get("ollama_max_retries", 2)

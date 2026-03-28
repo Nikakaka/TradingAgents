@@ -1,0 +1,8 @@
+{
+  "ticker": "300750.SZ",
+  "analysis_date": "today",
+  "analysts": "market,social,news,fundamentals",
+  "research_depth": 1,
+  "skip_translation": false,
+  "result_json": "results/openclaw/300750_sz_daily.json"
+}

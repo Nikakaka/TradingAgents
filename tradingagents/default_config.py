@@ -1,5 +1,11 @@
 import os
 
+from tradingagents.model_registry import get_provider_defaults
+
+
+_MODEL_DEFAULTS = get_provider_defaults()
+_FALLBACK_MODEL_DEFAULTS = get_provider_defaults("ollama")
+
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
     "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", "./results"),
@@ -8,10 +14,15 @@ DEFAULT_CONFIG = {
         "dataflows/data_cache",
     ),
     # LLM settings
-    "llm_provider": "zhipu",
-    "deep_think_llm": "GLM-4.7",
-    "quick_think_llm": "GLM-4.7",
-    "backend_url": "https://open.bigmodel.cn/api/paas/v4",
+    "llm_provider": _MODEL_DEFAULTS["provider"],
+    "deep_think_llm": _MODEL_DEFAULTS["deep_model"],
+    "quick_think_llm": _MODEL_DEFAULTS["quick_model"],
+    "backend_url": _MODEL_DEFAULTS["backend_url"],
+    "rate_limit_fallback_enabled": True,
+    "rate_limit_fallback_provider": _FALLBACK_MODEL_DEFAULTS["provider"],
+    "rate_limit_fallback_quick_think_llm": _FALLBACK_MODEL_DEFAULTS["quick_model"],
+    "rate_limit_fallback_deep_think_llm": _FALLBACK_MODEL_DEFAULTS["deep_model"],
+    "rate_limit_fallback_backend_url": _FALLBACK_MODEL_DEFAULTS["backend_url"],
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
     "openai_reasoning_effort": None,    # "medium", "high", "low"
