@@ -3,8 +3,38 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import yfinance as yf
 import os
+import pandas as pd
 from .stockstats_utils import StockstatsUtils, _clean_dataframe, yf_retry
 from tradingagents.market_utils import get_market_info
+from .config import get_config
+
+
+def _stock_cache_path(yfinance_symbol: str, start_date: str, end_date: str) -> str:
+    config = get_config()
+    cache_dir = config.get("data_cache_dir", "data")
+    os.makedirs(cache_dir, exist_ok=True)
+    safe_symbol = yfinance_symbol.replace("/", "_")
+    return os.path.join(cache_dir, f"{safe_symbol}-stock-{start_date}-{end_date}.csv")
+
+
+def _format_stock_csv(data: pd.DataFrame, canonical_ticker: str, start_date: str, end_date: str, source_label: str) -> str:
+    if data.empty:
+        return f"No data found for symbol '{canonical_ticker}' between {start_date} and {end_date}"
+
+    if data.index.tz is not None:
+        data.index = data.index.tz_localize(None)
+
+    numeric_columns = ["Open", "High", "Low", "Close", "Adj Close"]
+    for col in numeric_columns:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col], errors="coerce").round(2)
+
+    csv_string = data.to_csv()
+    header = f"# Stock data for {canonical_ticker} from {start_date} to {end_date}\n"
+    header += f"# Total records: {len(data)}\n"
+    header += f"# Data source: {source_label}\n"
+    header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    return header + csv_string
 
 def get_YFin_data_online(
     symbol: Annotated[str, "ticker symbol of the company"],
@@ -17,35 +47,27 @@ def get_YFin_data_online(
 
     market_info = get_market_info(symbol)
     ticker = yf.Ticker(market_info.yfinance_symbol)
+    cache_file = _stock_cache_path(market_info.yfinance_symbol, start_date, end_date)
 
-    # Fetch historical data for the specified date range
-    data = yf_retry(lambda: ticker.history(start=start_date, end=end_date))
+    try:
+        data = yf_retry(lambda: ticker.history(start=start_date, end=end_date))
+        if data is not None and not data.empty:
+            data.to_csv(cache_file)
+            return _format_stock_csv(data, market_info.canonical_ticker, start_date, end_date, "yfinance")
+    except Exception:
+        if os.path.exists(cache_file):
+            cached = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+            return _format_stock_csv(cached, market_info.canonical_ticker, start_date, end_date, "yfinance-cache")
+        raise
 
-    # Check if data is empty
-    if data.empty:
-        return (
-            f"No data found for symbol '{symbol}' between {start_date} and {end_date}"
-        )
+    if os.path.exists(cache_file):
+        cached = pd.read_csv(cache_file, index_col=0, parse_dates=True)
+        return _format_stock_csv(cached, market_info.canonical_ticker, start_date, end_date, "yfinance-cache")
 
-    # Remove timezone info from index for cleaner output
-    if data.index.tz is not None:
-        data.index = data.index.tz_localize(None)
+    if data is None:
+        return f"Yahoo Finance returned no data for symbol '{symbol}' between {start_date} and {end_date}"
 
-    # Round numerical values to 2 decimal places for cleaner display
-    numeric_columns = ["Open", "High", "Low", "Close", "Adj Close"]
-    for col in numeric_columns:
-        if col in data.columns:
-            data[col] = data[col].round(2)
-
-    # Convert DataFrame to CSV string
-    csv_string = data.to_csv()
-
-    # Add header information
-    header = f"# Stock data for {market_info.canonical_ticker} from {start_date} to {end_date}\n"
-    header += f"# Total records: {len(data)}\n"
-    header += f"# Data retrieved on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-
-    return header + csv_string
+    return f"No data found for symbol '{symbol}' between {start_date} and {end_date}"
 
 def get_stock_stats_indicators_window(
     symbol: Annotated[str, "ticker symbol of the company"],

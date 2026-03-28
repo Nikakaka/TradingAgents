@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradingAgents Web UI</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">TradingAgents Web</p>
+        <h1>面向中港美股分析的智能投研工作台</h1>
+        <p class="hero-text">支持模型配置、股票选择、历史报告浏览，以及更适合阅读的多团队分析结果展示。</p>
+      </div>
+      <div class="hero-metrics" id="hero-metrics"></div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar card">
+        <div class="card-head">
+          <h2>启动分析</h2>
+          <span class="badge subtle">实时写入报告</span>
+        </div>
+        <form id="analysis-form" class="stack-form">
+          <label>
+            <span>股票代码或公司名</span>
+            <input id="ticker" name="ticker" placeholder="例如 0700 / 600519 / 腾讯" required />
+          </label>
+          <label>
+            <span>分析日期</span>
+            <input id="analysis-date" name="analysis_date" type="date" required />
+          </label>
+          <div class="grid-two">
+            <label>
+              <span>模型供应商</span>
+              <select id="provider" name="llm_provider"></select>
+            </label>
+            <label>
+              <span>研究深度</span>
+              <select id="research-depth" name="research_depth"></select>
+            </label>
+          </div>
+          <label>
+            <span>Backend URL</span>
+            <input id="backend-url" name="backend_url" />
+          </label>
+          <label id="api-key-field" hidden>
+            <span id="api-key-label">API Key</span>
+            <input id="api-key" name="api_key" type="password" autocomplete="off" placeholder="输入当前模型供应商的 API Key" />
+            <small class="helper-inline" id="api-key-helper">可直接覆盖当前任务使用的 API Key；留空时沿用本机已有环境变量。</small>
+          </label>
+          <div class="grid-two">
+            <label>
+              <span>Quick Model</span>
+              <div class="model-picker">
+                <select id="quick-model-select" aria-label="Quick Model 推荐列表"></select>
+                <input id="quick-model" name="quick_model" placeholder="也可手动输入 Quick Model" />
+              </div>
+            </label>
+            <label>
+              <span>Deep Model</span>
+              <div class="model-picker">
+                <select id="deep-model-select" aria-label="Deep Model 推荐列表"></select>
+                <input id="deep-model" name="deep_model" placeholder="也可手动输入 Deep Model" />
+              </div>
+            </label>
+          </div>
+          <fieldset class="analyst-grid">
+            <legend>参与分析团队</legend>
+            <div id="analyst-options" class="chips"></div>
+          </fieldset>
+          <label class="checkbox-row">
+            <input id="translate-to-chinese" type="checkbox" checked />
+            <span>额外生成中文完整报告</span>
+          </label>
+          <button class="primary-btn" type="submit">开始分析</button>
+          <p class="helper" id="submit-feedback"></p>
+        </form>
+      </aside>
+
+      <section class="main-panels">
+        <section class="card section-block">
+          <div class="card-head">
+            <h2>运行状态</h2>
+            <span class="badge subtle">自动刷新</span>
+          </div>
+          <div id="jobs-panel" class="jobs-panel empty-state">当前还没有运行中的任务。</div>
+        </section>
+
+        <section class="split-grid">
+          <section class="card section-block">
+            <div class="card-head">
+              <h2>历史分析</h2>
+              <span class="badge" id="report-count">0</span>
+            </div>
+            <div id="reports-list" class="reports-list empty-state">还没有可展示的报告。</div>
+          </section>
+
+          <section class="card section-block detail-block">
+            <div id="report-detail" class="detail-empty">
+              <h2>选择一份报告查看</h2>
+              <p>结果页会把最终评级、执行摘要、分团队分析和完整报告按更易读的方式展开。</p>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+  </div>
+  <div class="modal-backdrop" id="symbol-modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="symbol-modal-title">
+      <div class="card-head">
+        <h3 id="symbol-modal-title">请选择要分析的标的</h3>
+        <button class="ghost-btn" id="symbol-modal-close" type="button">关闭</button>
+      </div>
+      <p class="helper modal-copy" id="symbol-modal-copy">该名称对应多个股票，请先确认要分析的上市标的。</p>
+      <div class="candidate-list" id="symbol-candidate-list"></div>
+    </div>
+  </div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

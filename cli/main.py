@@ -1,6 +1,7 @@
 from typing import Optional
 import datetime
 import sys
+import traceback
 import typer
 from pathlib import Path
 from functools import wraps
@@ -27,6 +28,12 @@ from rich.rule import Rule
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients.factory import create_llm_client
+from tradingagents.reporting import (
+    build_complete_report_markdown,
+    save_report_to_disk,
+    translate_report_to_chinese,
+)
+from tradingagents.web_server import run_server
 from cli.models import AnalystType
 from cli.utils import *
 from cli.announcements import fetch_announcements, display_announcements
@@ -653,145 +660,6 @@ def get_analysis_date():
             )
 
 
-def build_complete_report_markdown(final_state, ticker: str) -> str:
-    """Build a consolidated Markdown report from the final graph state."""
-    sections = []
-
-    analyst_parts = []
-    if final_state.get("market_report"):
-        analyst_parts.append(("Market Analyst", final_state["market_report"]))
-    if final_state.get("sentiment_report"):
-        analyst_parts.append(("Social Analyst", final_state["sentiment_report"]))
-    if final_state.get("news_report"):
-        analyst_parts.append(("News Analyst", final_state["news_report"]))
-    if final_state.get("fundamentals_report"):
-        analyst_parts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
-    if analyst_parts:
-        content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
-        sections.append(f"## I. Analyst Team Reports\n\n{content}")
-
-    if final_state.get("investment_debate_state"):
-        debate = final_state["investment_debate_state"]
-        research_parts = []
-        if debate.get("bull_history"):
-            research_parts.append(("Bull Researcher", debate["bull_history"]))
-        if debate.get("bear_history"):
-            research_parts.append(("Bear Researcher", debate["bear_history"]))
-        if debate.get("judge_decision"):
-            research_parts.append(("Research Manager", debate["judge_decision"]))
-        if research_parts:
-            content = "\n\n".join(f"### {name}\n{text}" for name, text in research_parts)
-            sections.append(f"## II. Research Team Decision\n\n{content}")
-
-    if final_state.get("trader_investment_plan"):
-        sections.append(f"## III. Trading Team Plan\n\n### Trader\n{final_state['trader_investment_plan']}")
-
-    if final_state.get("risk_debate_state"):
-        risk = final_state["risk_debate_state"]
-        risk_parts = []
-        if risk.get("aggressive_history"):
-            risk_parts.append(("Aggressive Analyst", risk["aggressive_history"]))
-        if risk.get("conservative_history"):
-            risk_parts.append(("Conservative Analyst", risk["conservative_history"]))
-        if risk.get("neutral_history"):
-            risk_parts.append(("Neutral Analyst", risk["neutral_history"]))
-        if risk_parts:
-            content = "\n\n".join(f"### {name}\n{text}" for name, text in risk_parts)
-            sections.append(f"## IV. Risk Management Team Decision\n\n{content}")
-
-        if risk.get("judge_decision"):
-            sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{risk['judge_decision']}")
-
-    header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    return header + "\n\n".join(sections)
-
-
-def translate_report_to_chinese(report_markdown: str, selections: dict) -> Optional[str]:
-    """Translate the consolidated Markdown report into Simplified Chinese."""
-    provider = selections.get("llm_provider")
-    model = selections.get("deep_thinker") or selections.get("shallow_thinker")
-    if not provider or not model:
-        return None
-
-    client = create_llm_client(provider, model, selections.get("backend_url"))
-    llm = client.get_llm()
-    prompt = (
-        "Translate the following financial analysis report into Simplified Chinese.\n"
-        "Preserve the Markdown structure, headings, tables, lists, ticker symbols, dates, numbers, "
-        "percentages, currencies, and inline code formatting exactly where possible.\n"
-        "Do not omit any content.\n"
-        "Keep machine-relevant labels unchanged when they appear, especially "
-        "`FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL**`, `Buy`, `Sell`, `Hold`, `Overweight`, and `Underweight`.\n"
-        "Return only the translated Markdown.\n\n"
-        f"{report_markdown}"
-    )
-    response = llm.invoke(prompt)
-    translated_text = getattr(response, "content", None)
-    if isinstance(translated_text, str) and translated_text.strip():
-        return translated_text
-    raise ValueError("Translation response was empty.")
-
-
-def save_report_to_disk(final_state, ticker: str, save_path: Path, translated_report: Optional[str] = None):
-    """Save complete analysis report to disk with organized subfolders."""
-    save_path.mkdir(parents=True, exist_ok=True)
-
-    analysts_dir = save_path / "1_analysts"
-    if final_state.get("market_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "market.md").write_text(final_state["market_report"], encoding="utf-8")
-    if final_state.get("sentiment_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"], encoding="utf-8")
-    if final_state.get("news_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "news.md").write_text(final_state["news_report"], encoding="utf-8")
-    if final_state.get("fundamentals_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"], encoding="utf-8")
-
-    if final_state.get("investment_debate_state"):
-        research_dir = save_path / "2_research"
-        debate = final_state["investment_debate_state"]
-        if debate.get("bull_history"):
-            research_dir.mkdir(exist_ok=True)
-            (research_dir / "bull.md").write_text(debate["bull_history"], encoding="utf-8")
-        if debate.get("bear_history"):
-            research_dir.mkdir(exist_ok=True)
-            (research_dir / "bear.md").write_text(debate["bear_history"], encoding="utf-8")
-        if debate.get("judge_decision"):
-            research_dir.mkdir(exist_ok=True)
-            (research_dir / "manager.md").write_text(debate["judge_decision"], encoding="utf-8")
-
-    if final_state.get("trader_investment_plan"):
-        trading_dir = save_path / "3_trading"
-        trading_dir.mkdir(exist_ok=True)
-        (trading_dir / "trader.md").write_text(final_state["trader_investment_plan"], encoding="utf-8")
-
-    if final_state.get("risk_debate_state"):
-        risk_dir = save_path / "4_risk"
-        risk = final_state["risk_debate_state"]
-        if risk.get("aggressive_history"):
-            risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "aggressive.md").write_text(risk["aggressive_history"], encoding="utf-8")
-        if risk.get("conservative_history"):
-            risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "conservative.md").write_text(risk["conservative_history"], encoding="utf-8")
-        if risk.get("neutral_history"):
-            risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "neutral.md").write_text(risk["neutral_history"], encoding="utf-8")
-        if risk.get("judge_decision"):
-            portfolio_dir = save_path / "5_portfolio"
-            portfolio_dir.mkdir(exist_ok=True)
-            (portfolio_dir / "decision.md").write_text(risk["judge_decision"], encoding="utf-8")
-
-    report_file = save_path / "complete_report.md"
-    report_file.write_text(build_complete_report_markdown(final_state, ticker), encoding="utf-8")
-    if translated_report:
-        (save_path / "complete_report_zh.md").write_text(translated_report, encoding="utf-8")
-    return report_file
-
-
 def display_complete_report(final_state, translated_report: Optional[str] = None):
     """Display the complete analysis report sequentially (avoids truncation)."""
     console.print()
@@ -1041,6 +909,7 @@ def run_analysis():
     report_dir.mkdir(parents=True, exist_ok=True)
     log_file = results_dir / "message_tool.log"
     log_file.touch(exist_ok=True)
+    translation_log_file = results_dir / "translation_error.log"
 
     def save_message_decorator(obj, func_name):
         func = getattr(obj, func_name)
@@ -1248,7 +1117,18 @@ def run_analysis():
         complete_report_markdown = build_complete_report_markdown(final_state, selections["ticker"])
         translated_report = translate_report_to_chinese(complete_report_markdown, selections)
     except Exception as e:
+        with open(translation_log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] Translation failed\n")
+            f.write(f"Ticker: {selections['ticker']}\n")
+            f.write(f"Provider: {selections.get('llm_provider')}\n")
+            f.write(f"Deep model: {selections.get('deep_thinker')}\n")
+            f.write(f"Quick model: {selections.get('shallow_thinker')}\n")
+            f.write(f"Backend URL: {selections.get('backend_url')}\n")
+            f.write(f"Error: {e}\n")
+            f.write(traceback.format_exc())
+            f.write("\n" + ("-" * 80) + "\n")
         console.print(f"[yellow]Warning: Could not generate Chinese translation: {e}[/yellow]")
+        console.print(f"[dim]Translation error log:[/dim] {translation_log_file}")
 
     # Post-analysis prompts (outside Live context for clean interaction)
     console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
@@ -1281,6 +1161,14 @@ def run_analysis():
 @app.command()
 def analyze():
     run_analysis()
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", help="Host to bind the web UI."),
+    port: int = typer.Option(8000, help="Port to bind the web UI."),
+):
+    run_server(host=host, port=port)
 
 
 if __name__ == "__main__":

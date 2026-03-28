@@ -157,8 +157,9 @@ def route_to_vendor(method: str, *args, **kwargs):
     """Route method calls to appropriate vendor implementation with fallback support."""
     category = get_category_for_method(method)
     vendor_config = get_vendor(category, method)
-    primary_vendors = [v.strip() for v in vendor_config.split(',')]
+    primary_vendors = [v.strip() for v in str(vendor_config).split(',') if v.strip()]
     symbol = args[0] if args else kwargs.get("ticker") or kwargs.get("symbol")
+    attempted_errors = []
 
     if method not in VENDOR_METHODS:
         raise ValueError(f"Method '{method}' not supported")
@@ -180,14 +181,29 @@ def route_to_vendor(method: str, *args, **kwargs):
         for impl_func in impl_funcs:
             try:
                 return impl_func(*args, **kwargs)
-            except (AlphaVantageRateLimitError, YFRateLimitError):
+            except AlphaVantageRateLimitError as exc:
+                attempted_errors.append(f"{vendor}:{impl_func.__name__} rate-limited ({exc})")
+                continue
+            except YFRateLimitError as exc:
+                attempted_errors.append(f"{vendor}:{impl_func.__name__} rate-limited ({exc})")
                 continue
             except ValueError as exc:
                 # Alpha Vantage is optional; skip it when the API key is not configured.
                 if vendor == "alpha_vantage" and "ALPHA_VANTAGE_API_KEY" in str(exc):
+                    attempted_errors.append(f"{vendor}:{impl_func.__name__} unavailable ({exc})")
                     continue
                 if vendor == "akshare" and symbol:
+                    attempted_errors.append(f"{vendor}:{impl_func.__name__} unsupported for symbol {symbol} ({exc})")
                     continue
+                attempted_errors.append(f"{vendor}:{impl_func.__name__} failed ({exc})")
                 raise
+            except Exception as exc:
+                attempted_errors.append(f"{vendor}:{impl_func.__name__} failed ({exc})")
+                continue
 
-    raise RuntimeError(f"No available vendor for '{method}'")
+    reason = "; ".join(attempted_errors) if attempted_errors else "no vendor implementation could handle the request"
+    return (
+        f"Data retrieval unavailable for '{method}'. "
+        f"Ticker: {symbol or 'unknown'}. "
+        f"Attempts: {reason}"
+    )
