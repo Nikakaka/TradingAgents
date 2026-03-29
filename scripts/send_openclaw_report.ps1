@@ -9,31 +9,28 @@
 
 $ErrorActionPreference = "Stop"
 
-$displayNameOverrides = @{
-    "9988.HK" = "阿里巴巴-W"
-    "0700.HK" = "腾讯控股"
-    "600519.SH" = "贵州茅台"
-    "300750.SZ" = "宁德时代"
-    "159934.SZ" = "黄金9999（代理：黄金ETF）"
-}
+$displayNameOverrides = @{}
+$displayNameOverrides.Add("9988.HK", "阿里巴巴-W")
+$displayNameOverrides.Add("0700.HK", "腾讯控股")
+$displayNameOverrides.Add("600519.SH", "贵州茅台")
+$displayNameOverrides.Add("300750.SZ", "宁德时代")
+$displayNameOverrides.Add("159934.SZ", "黄金9999（代理：黄金ETF）")
 
-$decisionLabelMap = @{
-    "BUY" = "买入"
-    "HOLD" = "持有"
-    "SELL" = "卖出"
-    "UNKNOWN" = "未知"
-}
+$decisionLabelMap = @{}
+$decisionLabelMap.Add("BUY", "买入")
+$decisionLabelMap.Add("HOLD", "持有")
+$decisionLabelMap.Add("SELL", "卖出")
+$decisionLabelMap.Add("UNKNOWN", "未知")
 
-$statusLabelMap = @{
-    "ok" = "成功"
-    "error" = "失败"
-}
+$statusLabelMap = @{}
+$statusLabelMap.Add("ok", "成功")
+$statusLabelMap.Add("error", "失败")
 
 if (-not (Test-Path -LiteralPath $ResultJsonPath)) {
     throw "Result JSON not found: $ResultJsonPath"
 }
 
-$rawJson = [System.IO.File]::ReadAllText($ResultJsonPath, [System.Text.Encoding]::UTF8)
+$rawJson = Get-Content -LiteralPath $ResultJsonPath -Encoding UTF8 -Raw
 $result = $rawJson | ConvertFrom-Json
 if (-not $result) {
     throw "Unable to parse result JSON: $ResultJsonPath"
@@ -97,6 +94,12 @@ foreach ($item in $result.results) {
 $lines.Add("")
 $lines.Add(("结果文件：{0}" -f $ResultJsonPath))
 
-$message = [string]::Join([Environment]::NewLine, $lines)
-openclaw message send --channel $Channel --target $Target --message $message --json | Out-Null
+$message = $lines -join "`n"
+
+$env:PYTHONIOENCODING = "utf-8"
+openclaw message send --channel $Channel --target $Target --message $message --json 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to send Feishu notification (exit code: $LASTEXITCODE)"
+}
+
 Write-Output ("Sent report to {0}:{1}" -f $Channel, $Target)

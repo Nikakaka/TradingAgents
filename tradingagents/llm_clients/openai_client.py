@@ -116,6 +116,19 @@ def _is_rate_limit_error(error_text: str) -> bool:
     return any(pattern in normalized for pattern in patterns)
 
 
+def _is_prompt_parameter_error(error_text: str) -> bool:
+    """Check if error is a prompt parameter issue (zhipu error 1213)."""
+    normalized = (error_text or "")
+    patterns = (
+        '"code": "1213"',
+        "'code': '1213'",
+        "error code: 1213",
+        "未正常接收到prompt参数",
+        "prompt参数",
+    )
+    return any(pattern in normalized for pattern in patterns)
+
+
 class NormalizedChatOpenAI(ChatOpenAI):
     """ChatOpenAI with normalized content output and provider-specific retries."""
 
@@ -173,14 +186,15 @@ class NormalizedChatOpenAI(ChatOpenAI):
                     return normalize_content(fallback_response)
             if self._provider_name != "zhipu":
                 raise
-            if "1301" not in error_text and "contentFilter" not in error_text:
+            # Handle zhipu-specific errors: content filter (1301) or prompt parameter error (1213)
+            if "1301" not in error_text and "contentFilter" not in error_text and not _is_prompt_parameter_error(error_text):
                 raise
             sanitized_input = _sanitize_input_for_zhipu(input)
             try:
                 return normalize_content(super().invoke(sanitized_input, config, **kwargs))
             except Exception as retry_exc:
                 retry_error = str(retry_exc)
-                if "1301" not in retry_error and "contentFilter" not in retry_error:
+                if "1301" not in retry_error and "contentFilter" not in retry_error and not _is_prompt_parameter_error(retry_error):
                     raise
                 return _build_safe_fallback_message(sanitized_input)
 
