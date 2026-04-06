@@ -37,19 +37,23 @@ DEFAULT_CONFIG = {
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
-    "max_recur_limit": 200,
+    "max_recur_limit": 800,  # Increased for depth=3 analysis with multiple stocks and complex debates
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
+    # efinance: EastMoney (best for China A-shares, stable and free)
+    # sina: Free, no rate limit, HK real-time quotes
+    # yfinance: Broader coverage but rate limited
+    # akshare: A-share data via baostock (free, but can be unstable)
+    # alpha_vantage: US stocks only, requires API key
     "data_vendors": {
-        # Prefer yfinance for broader exchange coverage (including HK suffixes),
-        # then fall back to Alpha Vantage when configured.
-        "core_stock_apis": "akshare,yfinance,alpha_vantage",
-        "technical_indicators": "akshare,yfinance,alpha_vantage",
+        "core_stock_apis": "efinance,sina,akshare,yfinance,alpha_vantage",
+        "technical_indicators": "efinance,akshare,yfinance,alpha_vantage",
         "fundamental_data": "akshare,yfinance,alpha_vantage",
-        "news_data": "yfinance,alpha_vantage",
+        "news_data": "akshare,yfinance,alpha_vantage",  # akshare first for Chinese A-shares
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
-        # Example: "get_stock_data": "alpha_vantage",  # Override category default
+        # Use sina for HK stocks (no rate limit)
+        # "get_stock_data": "sina",  # Override for HK stocks
     },
 }

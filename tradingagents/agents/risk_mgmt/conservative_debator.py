@@ -18,6 +18,24 @@ def _sanitize_report(text: str, max_chars: int = 2500) -> str:
     return sanitized[:max_chars]
 
 
+def _clean_pseudo_tool_calls(text: str) -> str:
+    """Remove pseudo tool call patterns that LLMs sometimes hallucinate."""
+    if not text:
+        return text
+
+    pattern1 = r'<tool_call>\w+\([^)]*\)(?:<tool_call>\w+\([^)]*\))*'
+    text = re.sub(pattern1, '', text)
+    pattern2 = r'<tool_call>\w+\([^)]*\)'
+    text = re.sub(pattern2, '', text)
+    pattern3 = r'\n\s*<tool_call>\w+\([^)]*\)\s*\n'
+    text = re.sub(pattern3, '\n', text)
+    pattern4 = r'<tool_call>\w+\([^)]*\)\s*'
+    text = re.sub(pattern4, '', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
+
 def _fallback_argument(trader_decision: str) -> str:
     summary = _sanitize_report(trader_decision, max_chars=900) or "Research summary requires manual review."
     return (
@@ -77,7 +95,7 @@ Other views:
 
         try:
             response = llm.invoke(prompt)
-            argument = f"Conservative Analyst: {response.content}"
+            argument = f"Conservative Analyst: {_clean_pseudo_tool_calls(response.content)}"
         except Exception as exc:
             error_text = str(exc)
             if "1301" not in error_text and "contentFilter" not in error_text:

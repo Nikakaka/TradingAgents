@@ -1,0 +1,10 @@
+{
+    "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_KEY",
+    "description": "飞书机器人 Webhook URL，用于发送持仓分析通知",
+    "instructions": [
+        "1. 在飞书中创建自定义机器人",
+        "2. 获取 Webhook URL",
+        "3. 将 URL 粘贴到上面的 webhook_url 字段",
+        "4. 或者设置环境变量 FEISHU_WEBHOOK_URL"
+    ]
+}

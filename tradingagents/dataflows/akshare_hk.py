@@ -1,10 +1,29 @@
+import os
 from datetime import datetime
 
-import akshare as ak
+import httpx
 import pandas as pd
 from stockstats import wrap
 
 from tradingagents.market_utils import get_market_info
+
+
+# Proxy configuration for HK data
+# Set to None to disable proxy (useful when proxy is not working)
+_PROXY_URL = os.environ.get("AKSHARE_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
+
+# Check if proxy is working, if not disable it
+if _PROXY_URL and _PROXY_URL.startswith("http://127.0.0.1"):
+    # Local proxy may not be stable, try without proxy
+    try:
+        import urllib.request
+        urllib.request.urlopen("https://www.baidu.com", timeout=5)
+        # Direct connection works, no need for proxy
+        _PROXY_URL = None
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
+    except:
+        pass  # Keep proxy if direct connection fails
 
 
 _HK_RENAME_MAP = {
@@ -30,12 +49,71 @@ def _normalize_hk_symbol(symbol: str) -> str:
     return info.akshare_symbol
 
 
-def _fetch_hk_hist_df(symbol: str) -> pd.DataFrame:
+def _fetch_hk_hist_eastmoney(symbol: str, days: int = 1000) -> pd.DataFrame:
+    """Fetch HK stock historical data directly from Eastmoney API via proxy.
+
+    This bypasses akshare's SSL issues with certain proxies.
+    """
     hk_symbol = _normalize_hk_symbol(symbol)
-    df = ak.stock_hk_hist(symbol=hk_symbol, period="daily", adjust="qfq")
-    if df is None or df.empty:
-        raise RuntimeError(f"No Akshare HK data found for symbol '{symbol}'")
-    return df.copy()
+    # Eastmoney uses 116 for HK market, symbol without leading zeros but with 5 digits
+    secid = f"116.{hk_symbol}"
+
+    try:
+        with httpx.Client(proxy=_PROXY_URL, timeout=30) as client:
+            response = client.get(
+                "http://push2his.eastmoney.com/api/qt/stock/kline/get",
+                params={
+                    "secid": secid,
+                    "fields1": "f1,f2,f3,f4,f5,f6",
+                    "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
+                    "klt": "101",  # daily
+                    "fqt": "1",    # qfq (前复权)
+                    "end": "20500000",
+                    "lmt": str(days)
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            if not data.get("data", {}).get("klines"):
+                raise RuntimeError(f"No data from Eastmoney for symbol '{symbol}'")
+
+            # Parse klines: "date,open,close,high,low,volume,turnover,amplitude,change_pct,change_amt,turnover_rate"
+            klines = data["data"]["klines"]
+            records = []
+            for kline in klines:
+                parts = kline.split(",")
+                if len(parts) >= 6:
+                    records.append({
+                        "日期": parts[0],
+                        "开盘": float(parts[1]),
+                        "收盘": float(parts[2]),
+                        "最高": float(parts[3]),
+                        "最低": float(parts[4]),
+                        "成交量": float(parts[5]),
+                    })
+
+            df = pd.DataFrame(records)
+            return df
+
+    except Exception as e:
+        raise RuntimeError(f"Eastmoney API failed for {symbol}: {e}")
+
+
+def _fetch_hk_hist_df(symbol: str) -> pd.DataFrame:
+    """Fetch HK stock historical data, with fallback to direct Eastmoney API."""
+    # Try akshare first
+    try:
+        import akshare as ak
+        hk_symbol = _normalize_hk_symbol(symbol)
+        df = ak.stock_hk_hist(symbol=hk_symbol, period="daily", adjust="qfq")
+        if df is not None and not df.empty:
+            return df.copy()
+    except Exception:
+        pass  # Fall back to direct Eastmoney API
+
+    # Fallback to direct Eastmoney API
+    return _fetch_hk_hist_eastmoney(symbol)
 
 
 def _rename_columns(df: pd.DataFrame) -> pd.DataFrame:

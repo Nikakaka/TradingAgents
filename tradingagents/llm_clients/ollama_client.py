@@ -98,10 +98,18 @@ class RequestChatOllama(BaseChatModel):
 
         message = data.get("message", {})
 
+        # Extract content from message, including thinking field for reasoning models
+        content = message.get("content", "") or ""
+        thinking = message.get("thinking", "") or ""
+
+        # For reasoning models (like glm-4.7-flash, gpt-oss), use thinking if content is empty
+        if not content.strip() and thinking.strip():
+            content = thinking
+
         ai_message = AIMessage(
-            content=message.get("content", "") or "",
+            content=content,
             tool_calls=self._extract_tool_calls(message),
-            additional_kwargs={"thinking": message.get("thinking", "")},
+            additional_kwargs={"thinking": thinking} if thinking else {},
         )
         normalize_content(ai_message)
         return ChatResult(generations=[ChatGeneration(message=ai_message)])

@@ -38,7 +38,7 @@ def create_llm_client(
     if provider_lower == "ollama":
         return OllamaClient(model, base_url, **kwargs)
 
-    if provider_lower in ("openai", "openrouter", "zhipu"):
+    if provider_lower in ("openai", "openrouter", "zhipu", "jd"):
         return OpenAIClient(model, base_url, provider=provider_lower, **kwargs)
 
     if provider_lower == "xai":

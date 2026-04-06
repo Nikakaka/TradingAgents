@@ -17,6 +17,7 @@ from .akshare_fundamentals import (
     get_cashflow as get_akshare_cashflow,
     get_income_statement as get_akshare_income_statement,
 )
+from .akshare_news import get_news_akshare, get_global_news_akshare
 from .alpha_vantage import (
     get_stock as get_alpha_vantage_stock,
     get_indicator as get_alpha_vantage_indicator,
@@ -35,6 +36,14 @@ from .akshare_hk import (
 from .akshare_cn import (
     get_stock_data as get_akshare_cn_stock,
     get_indicator as get_akshare_cn_indicator,
+)
+from .sina_finance import (
+    get_stock_data as get_sina_hk_stock,
+    get_hk_realtime_quote,
+)
+from .efinance_cn import (
+    get_stock_data as get_efinance_cn_stock,
+    get_indicator as get_efinance_cn_indicator,
 )
 from .alpha_vantage_common import AlphaVantageRateLimitError
 from yfinance.exceptions import YFRateLimitError
@@ -76,21 +85,26 @@ TOOLS_CATEGORIES = {
 }
 
 VENDOR_LIST = [
+    "efinance",  # EastMoney - best for China A-shares (stable, free)
     "akshare",
     "yfinance",
     "alpha_vantage",
+    "sina",
 ]
 
 # Mapping of methods to their vendor-specific implementations
 VENDOR_METHODS = {
     # core_stock_apis
     "get_stock_data": {
+        "efinance": get_efinance_cn_stock,  # A-shares via EastMoney (stable)
+        "sina": get_sina_hk_stock,  # HK real-time data (no rate limit)
         "akshare": [get_akshare_hk_stock, get_akshare_cn_stock],
         "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
     },
     # technical_indicators
     "get_indicators": {
+        "efinance": get_efinance_cn_indicator,  # A-shares via EastMoney
         "akshare": [get_akshare_hk_indicator, get_akshare_cn_indicator],
         "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
@@ -118,10 +132,12 @@ VENDOR_METHODS = {
     },
     # news_data
     "get_news": {
+        "akshare": get_news_akshare,  # Chinese A-share news (EastMoney)
         "alpha_vantage": get_alpha_vantage_news,
         "yfinance": get_news_yfinance,
     },
     "get_global_news": {
+        "akshare": get_global_news_akshare,  # Chinese market news (EastMoney)
         "yfinance": get_global_news_yfinance,
         "alpha_vantage": get_alpha_vantage_global_news,
     },

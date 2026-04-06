@@ -1,4 +1,24 @@
+import re
+
 from tradingagents.agents.utils.agent_utils import build_instrument_context
+
+
+def _clean_pseudo_tool_calls(text: str) -> str:
+    """Remove pseudo tool call patterns that LLMs sometimes hallucinate."""
+    if not text:
+        return text
+
+    pattern1 = r'<tool_call>\w+\([^)]*\)(?:<tool_call>\w+\([^)]*\))*'
+    text = re.sub(pattern1, '', text)
+    pattern2 = r'<tool_call>\w+\([^)]*\)'
+    text = re.sub(pattern2, '', text)
+    pattern3 = r'\n\s*<tool_call>\w+\([^)]*\)\s*\n'
+    text = re.sub(pattern3, '\n', text)
+    pattern4 = r'<tool_call>\w+\([^)]*\)\s*'
+    text = re.sub(pattern4, '', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
 
 
 def create_portfolio_manager(llm, memory):
@@ -54,8 +74,11 @@ Be decisive and ground every conclusion in specific evidence from the analysts."
 
         response = llm.invoke(prompt)
 
+        # Clean pseudo tool calls from response
+        cleaned_content = _clean_pseudo_tool_calls(response.content)
+
         new_risk_debate_state = {
-            "judge_decision": response.content,
+            "judge_decision": cleaned_content,
             "history": risk_debate_state["history"],
             "aggressive_history": risk_debate_state["aggressive_history"],
             "conservative_history": risk_debate_state["conservative_history"],
@@ -69,7 +92,7 @@ Be decisive and ground every conclusion in specific evidence from the analysts."
 
         return {
             "risk_debate_state": new_risk_debate_state,
-            "final_trade_decision": response.content,
+            "final_trade_decision": cleaned_content,
         }
 
     return portfolio_manager_node

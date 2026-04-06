@@ -1,10 +1,60 @@
 """yfinance-based news data fetching functions."""
 
+import time
+import logging
 import yfinance as yf
 import akshare as ak
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from yfinance.exceptions import YFRateLimitError
 from tradingagents.market_utils import get_default_news_queries, get_market_info
+
+logger = logging.getLogger(__name__)
+
+# Rate limit retry configuration
+_YF_NEWS_MAX_RETRIES = 3
+_YF_NEWS_BASE_DELAY = 2.0
+
+
+def _yf_news_retry(func, *args, **kwargs):
+    """Execute a yfinance news call with exponential backoff on rate limits.
+
+    yfinance raises YFRateLimitError on HTTP 429 responses. This wrapper
+    adds retry logic specifically for rate limits with exponential backoff.
+
+    Args:
+        func: The function to call
+        *args: Positional arguments to pass to the function
+        **kwargs: Keyword arguments to pass to the function
+
+    Returns:
+        The result of the function call
+
+    Raises:
+        YFRateLimitError: If all retries are exhausted
+    """
+    last_error = None
+    for attempt in range(_YF_NEWS_MAX_RETRIES + 1):
+        try:
+            return func(*args, **kwargs)
+        except YFRateLimitError as e:
+            last_error = e
+            if attempt < _YF_NEWS_MAX_RETRIES:
+                delay = _YF_NEWS_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    f"Yahoo Finance news rate limited, retrying in {delay:.0f}s "
+                    f"(attempt {attempt + 1}/{_YF_NEWS_MAX_RETRIES})"
+                )
+                time.sleep(delay)
+            else:
+                logger.error(f"Yahoo Finance news rate limit exhausted after {_YF_NEWS_MAX_RETRIES + 1} attempts")
+                raise
+        except Exception:
+            # Non-rate-limit errors should propagate immediately
+            raise
+
+    # Should not reach here, but for completeness
+    raise last_error
 
 
 def _extract_article_data(article: dict) -> dict:
@@ -102,10 +152,14 @@ def get_news_yfinance(
         market_info = get_market_info(ticker)
         news = []
 
-        # First try the provider-native ticker endpoint.
+        # First try the provider-native ticker endpoint with retry.
         stock = yf.Ticker(market_info.yfinance_symbol)
         try:
-            news = stock.get_news(count=20) or []
+            news = _yf_news_retry(lambda: stock.get_news(count=20)) or []
+        except YFRateLimitError:
+            # Rate limit exhausted, will try search below
+            logger.warning(f"Ticker news endpoint rate limited for {market_info.canonical_ticker}, falling back to search")
+            news = []
         except Exception:
             news = []
 
@@ -113,10 +167,15 @@ def get_news_yfinance(
         if not news:
             for query in get_default_news_queries(ticker) + _get_company_name_aliases(ticker):
                 try:
-                    search = yf.Search(query=query, news_count=20, enable_fuzzy_query=True)
+                    search = _yf_news_retry(
+                        lambda q=query: yf.Search(query=q, news_count=20, enable_fuzzy_query=True)
+                    )
                     if search.news:
                         news = search.news
                         break
+                except YFRateLimitError:
+                    logger.warning(f"Search rate limited for query '{query}', trying next query")
+                    continue
                 except Exception:
                     continue
 
@@ -182,14 +241,29 @@ def get_global_news_yfinance(
 
     all_news = []
     seen_titles = set()
+    rate_limit_count = 0
 
     try:
         for query in search_queries:
-            search = yf.Search(
-                query=query,
-                news_count=limit,
-                enable_fuzzy_query=True,
-            )
+            # Stop if we have enough news or rate limited too many times
+            if len(all_news) >= limit:
+                break
+            if rate_limit_count >= len(search_queries):
+                # All queries hit rate limit, stop trying
+                logger.error("All global news queries hit rate limit")
+                break
+
+            try:
+                search = _yf_news_retry(
+                    lambda q=query: yf.Search(query=q, news_count=limit, enable_fuzzy_query=True)
+                )
+            except YFRateLimitError:
+                logger.warning(f"Global news search rate limited for query '{query}'")
+                rate_limit_count += 1
+                continue
+            except Exception as e:
+                logger.warning(f"Global news search failed for query '{query}': {e}")
+                continue
 
             if search.news:
                 for article in search.news:
@@ -204,9 +278,6 @@ def get_global_news_yfinance(
                     if title and title not in seen_titles:
                         seen_titles.add(title)
                         all_news.append(article)
-
-            if len(all_news) >= limit:
-                break
 
         if not all_news:
             return f"No global news found for {curr_date}"

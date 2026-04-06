@@ -1,11 +1,19 @@
 import os
+import time
+import logging
 import requests
 import pandas as pd
 import json
 from datetime import datetime
 from io import StringIO
 
+logger = logging.getLogger(__name__)
+
 API_BASE_URL = "https://www.alphavantage.co/query"
+
+# Rate limit retry configuration
+_AV_MAX_RETRIES = 3
+_AV_BASE_DELAY = 12.0  # Alpha Vantage free tier has 12-second rate limit
 
 def get_api_key() -> str:
     """Retrieve the API key for Alpha Vantage from environment variables."""
@@ -39,11 +47,19 @@ class AlphaVantageRateLimitError(Exception):
     """Exception raised when Alpha Vantage API rate limit is exceeded."""
     pass
 
-def _make_api_request(function_name: str, params: dict) -> dict | str:
+
+def _make_api_request(function_name: str, params: dict, _retry_count: int = 0) -> dict | str:
     """Helper function to make API requests and handle responses.
-    
+
+    Includes exponential backoff retry for rate limit errors.
+
+    Args:
+        function_name: Alpha Vantage API function name
+        params: API parameters
+        _retry_count: Internal retry counter (do not set manually)
+
     Raises:
-        AlphaVantageRateLimitError: When API rate limit is exceeded
+        AlphaVantageRateLimitError: When API rate limit is exceeded and retries exhausted
     """
     # Create a copy of params to avoid modifying the original
     api_params = params.copy()
@@ -52,22 +68,22 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
         "apikey": get_api_key(),
         "source": "trading_agents",
     })
-    
+
     # Handle entitlement parameter if present in params or global variable
     current_entitlement = globals().get('_current_entitlement')
     entitlement = api_params.get("entitlement") or current_entitlement
-    
+
     if entitlement:
         api_params["entitlement"] = entitlement
     elif "entitlement" in api_params:
         # Remove entitlement if it's None or empty
         api_params.pop("entitlement", None)
-    
+
     response = requests.get(API_BASE_URL, params=api_params)
     response.raise_for_status()
 
     response_text = response.text
-    
+
     # Check if response is JSON (error responses are typically JSON)
     try:
         response_json = json.loads(response_text)
@@ -75,7 +91,17 @@ def _make_api_request(function_name: str, params: dict) -> dict | str:
         if "Information" in response_json:
             info_message = response_json["Information"]
             if "rate limit" in info_message.lower() or "api key" in info_message.lower():
-                raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {info_message}")
+                if _retry_count < _AV_MAX_RETRIES:
+                    delay = _AV_BASE_DELAY * (2 ** _retry_count)
+                    logger.warning(
+                        f"Alpha Vantage rate limit exceeded, retrying in {delay:.0f}s "
+                        f"(attempt {_retry_count + 1}/{_AV_MAX_RETRIES + 1})"
+                    )
+                    time.sleep(delay)
+                    return _make_api_request(function_name, params, _retry_count + 1)
+                else:
+                    logger.error(f"Alpha Vantage rate limit exhausted after {_AV_MAX_RETRIES + 1} attempts")
+                    raise AlphaVantageRateLimitError(f"Alpha Vantage rate limit exceeded: {info_message}")
     except json.JSONDecodeError:
         # Response is not JSON (likely CSV data), which is normal
         pass

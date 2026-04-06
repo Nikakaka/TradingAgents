@@ -53,6 +53,7 @@ PROVIDER_API_KEY_ENV = {
     "xai": "XAI_API_KEY",
     "zhipu": "ZHIPUAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "jd": "JD_API_KEY",
 }
 
 
@@ -98,6 +99,18 @@ def _build_translation_selections(payload: Dict[str, Any]) -> Dict[str, Any]:
         "shallow_thinker": payload.get("quick_model") or DEFAULT_CONFIG["quick_think_llm"],
         "backend_url": payload.get("backend_url") or DEFAULT_CONFIG["backend_url"],
         "api_key": (payload.get("api_key") or "").strip(),
+    }
+
+
+def _build_fallback_selections() -> Dict[str, Any] | None:
+    """Build fallback provider selections for translation retry."""
+    if not DEFAULT_CONFIG.get("rate_limit_fallback_enabled"):
+        return None
+    return {
+        "llm_provider": DEFAULT_CONFIG.get("rate_limit_fallback_provider"),
+        "deep_thinker": DEFAULT_CONFIG.get("rate_limit_fallback_deep_think_llm"),
+        "shallow_thinker": DEFAULT_CONFIG.get("rate_limit_fallback_quick_think_llm"),
+        "backend_url": DEFAULT_CONFIG.get("rate_limit_fallback_backend_url"),
     }
 
 
@@ -998,6 +1011,7 @@ class JobManager:
                 if payload.get("translate_to_chinese", True):
                     complete_report = build_complete_report_markdown(final_state, ticker)
                     try:
+                        fallback_selections = _build_fallback_selections()
                         translated_report = translate_report_to_chinese(
                             complete_report,
                             {
@@ -1006,6 +1020,7 @@ class JobManager:
                                 "shallow_thinker": config["quick_think_llm"],
                                 "backend_url": config["backend_url"],
                             },
+                            fallback_selections=fallback_selections,
                         )
                     except Exception as exc:
                         translation_warning = f"Chinese translation skipped: {exc}"
@@ -1113,11 +1128,13 @@ class TradingAgentsWebHandler(BaseHTTPRequestHandler):
                 return
             try:
                 selections = _build_translation_selections(payload)
+                fallback_selections = _build_fallback_selections()
                 with _temporary_provider_api_key(selections["llm_provider"], selections.get("api_key", "")):
                     output_path = translate_saved_report_to_chinese(
                         report_dir,
                         selections,
                         overwrite=True,
+                        fallback_selections=fallback_selections,
                     )
                 self._write_json(
                     {
@@ -1144,11 +1161,13 @@ class TradingAgentsWebHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             try:
                 selections = _build_translation_selections(payload)
+                fallback_selections = _build_fallback_selections()
                 with _temporary_provider_api_key(selections["llm_provider"], selections.get("api_key", "")):
                     output_path = translate_saved_report_to_chinese(
                         report_dir,
                         selections,
                         overwrite=True,
+                        fallback_selections=fallback_selections,
                     )
                 self._write_json(
                     {

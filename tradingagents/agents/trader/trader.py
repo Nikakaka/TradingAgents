@@ -33,6 +33,40 @@ def _sanitize_for_provider(text: str, max_chars: int = 5000) -> str:
     return sanitized[:max_chars]
 
 
+def _clean_pseudo_tool_calls(text: str) -> str:
+    """Remove pseudo tool call patterns that LLMs sometimes hallucinate.
+
+    Some models output text like:
+    - "<tool_call>get_price_data("ticker")<tool_call>get_financial_data("ticker")"
+    - "<tool_call>get_price_data("ticker")1080"
+
+    These are not real tool calls but model hallucinations that should be cleaned.
+    """
+    if not text:
+        return text
+
+    # Pattern 1: Pseudo tool call blocks
+    pattern1 = r'<tool_call>\w+\([^)]*\)(?:<tool_call>\w+\([^)]*\))*'
+    text = re.sub(pattern1, '', text)
+
+    # Pattern 2: Single pseudo tool calls
+    pattern2 = r'<tool_call>\w+\([^)]*\)'
+    text = re.sub(pattern2, '', text)
+
+    # Pattern 3: Trailing tool call remnants
+    pattern3 = r'\n\s*<tool_call>\w+\([^)]*\)\s*\n'
+    text = re.sub(pattern3, '\n', text)
+
+    # Pattern 4: Tool calls followed by content without proper spacing
+    pattern4 = r'<tool_call>\w+\([^)]*\)\s*'
+    text = re.sub(pattern4, '', text)
+
+    # Clean up multiple consecutive blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
+
 def _build_primary_messages(
     company_name: str,
     instrument_context: str,
@@ -148,10 +182,24 @@ def create_trader(llm, memory):
                     investment_plan=sanitized_plan,
                 )
 
+        # Clean any pseudo tool calls from the response
+        cleaned_content = _clean_pseudo_tool_calls(_extract_content(result))
+
         return {
-            "messages": [result],
-            "trader_investment_plan": result.content,
+            "messages": [AIMessage(content=cleaned_content)],
+            "trader_investment_plan": cleaned_content,
             "sender": name,
         }
 
     return functools.partial(trader_node, name="Trader")
+
+
+def _extract_content(result) -> str:
+    """Extract text content from LLM response."""
+    if hasattr(result, "content"):
+        return result.content
+    if isinstance(result, str):
+        return result
+    if isinstance(result, dict):
+        return result.get("content", result.get("text", str(result)))
+    return str(result)

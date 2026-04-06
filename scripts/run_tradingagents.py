@@ -71,6 +71,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the resolved configuration and exit without running analysis.",
     )
+    parser.add_argument(
+        "--position-quantity",
+        type=float,
+        default=None,
+        help="Position quantity for portfolio context.",
+    )
+    parser.add_argument(
+        "--position-cost",
+        type=float,
+        default=None,
+        help="Position cost price for P&L calculation.",
+    )
+    parser.add_argument(
+        "--position-value",
+        type=float,
+        default=None,
+        help="Current position market value.",
+    )
+    parser.add_argument(
+        "--position-pnl",
+        type=float,
+        default=None,
+        help="Position profit/loss amount.",
+    )
+    parser.add_argument(
+        "--position-pnl-pct",
+        type=float,
+        default=None,
+        help="Position profit/loss percentage.",
+    )
     return parser
 
 
@@ -79,7 +109,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def parser_defaults() -> dict[str, Any]:
-    return vars(build_parser().parse_args([]))
+    defaults = vars(build_parser().parse_args([]))
+    # Ensure position fields are included in defaults
+    for key in ["position_quantity", "position_cost", "position_value", "position_pnl", "position_pnl_pct"]:
+        if key not in defaults:
+            defaults[key] = None
+    return defaults
 
 
 def apply_config_file(args: argparse.Namespace) -> argparse.Namespace:
@@ -104,6 +139,21 @@ def apply_config_file(args: argparse.Namespace) -> argparse.Namespace:
         normalized_key = key.replace("-", "_")
         if normalized_key in merged:
             merged[normalized_key] = value
+
+    # Handle position_info from config file
+    if "position_info" in payload:
+        pos_info = payload["position_info"]
+        if isinstance(pos_info, dict):
+            if "quantity" in pos_info and args.position_quantity is None:
+                merged["position_quantity"] = pos_info["quantity"]
+            if "cost_price" in pos_info and args.position_cost is None:
+                merged["position_cost"] = pos_info["cost_price"]
+            if "market_value" in pos_info and args.position_value is None:
+                merged["position_value"] = pos_info["market_value"]
+            if "profit_loss" in pos_info and args.position_pnl is None:
+                merged["position_pnl"] = pos_info["profit_loss"]
+            if "profit_loss_pct" in pos_info and args.position_pnl_pct is None:
+                merged["position_pnl_pct"] = pos_info["profit_loss_pct"]
 
     for key, default_value in defaults.items():
         current_value = getattr(args, key)
@@ -160,6 +210,17 @@ def build_config(args: argparse.Namespace) -> dict[str, Any]:
     config["backend_url"] = args.backend_url
     config["max_debate_rounds"] = args.research_depth
     config["max_risk_discuss_rounds"] = args.research_depth
+
+    # Increase recursion limit for deeper analysis
+    # Each debate round adds approximately 50-100 recursion steps
+    # depth=1 needs ~200, depth=2 needs ~350, depth=3 needs ~500+
+    if args.research_depth >= 3:
+        config["max_recur_limit"] = 800
+    elif args.research_depth >= 2:
+        config["max_recur_limit"] = 600
+    else:
+        config["max_recur_limit"] = 400
+
     return config
 
 
@@ -173,7 +234,7 @@ def write_result_json(result_json: str | None, payload: dict[str, Any]) -> None:
     result_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def write_translation_error_log(output_dir: Path, args: argparse.Namespace, exc: Exception) -> Path:
+def write_translation_error_log(output_dir: Path, args: argparse.Namespace, exc: Exception, fallback_info: str = None) -> Path:
     log_path = output_dir / "translation_error.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as handle:
@@ -183,6 +244,8 @@ def write_translation_error_log(output_dir: Path, args: argparse.Namespace, exc:
         handle.write(f"Quick model: {args.quick_model}\n")
         handle.write(f"Deep model: {args.deep_model}\n")
         handle.write(f"Backend URL: {args.backend_url}\n")
+        if fallback_info:
+            handle.write(f"Fallback attempted: {fallback_info}\n")
         handle.write(f"Error: {exc}\n")
         handle.write(traceback.format_exc())
         handle.write("\n")
@@ -197,6 +260,23 @@ def main() -> int:
     output_dir = build_output_dir(args.ticker, args.analysis_date, args.output_dir)
     config = build_config(args)
 
+    # Build position info dict if available
+    position_info = None
+    if any([
+        args.position_quantity is not None,
+        args.position_cost is not None,
+        args.position_value is not None,
+        args.position_pnl is not None,
+        args.position_pnl_pct is not None,
+    ]):
+        position_info = {
+            "quantity": args.position_quantity,
+            "cost_price": args.position_cost,
+            "market_value": args.position_value,
+            "profit_loss": args.position_pnl,
+            "profit_loss_pct": args.position_pnl_pct,
+        }
+
     summary = {
         "ticker": args.ticker,
         "analysis_date": args.analysis_date,
@@ -209,6 +289,7 @@ def main() -> int:
         "output_dir": str(output_dir.resolve()),
         "skip_translation": args.skip_translation,
         "config_file": str(Path(args.config_file).resolve()) if args.config_file else None,
+        "position_info": position_info,
     }
 
     if args.dry_run:
@@ -228,6 +309,16 @@ def main() -> int:
     complete_report = build_complete_report_markdown(final_state, args.ticker)
     if not args.skip_translation:
         try:
+            # Build fallback config for translation if rate limit fallback is enabled
+            fallback_selections = None
+            if config.get("rate_limit_fallback_enabled"):
+                fallback_selections = {
+                    "llm_provider": config.get("rate_limit_fallback_provider"),
+                    "deep_thinker": config.get("rate_limit_fallback_deep_think_llm"),
+                    "shallow_thinker": config.get("rate_limit_fallback_quick_think_llm"),
+                    "backend_url": config.get("rate_limit_fallback_backend_url"),
+                }
+
             translated_report = translate_report_to_chinese(
                 complete_report,
                 {
@@ -236,6 +327,7 @@ def main() -> int:
                     "shallow_thinker": config["quick_think_llm"],
                     "backend_url": config["backend_url"],
                 },
+                fallback_selections=fallback_selections,
             )
         except Exception as exc:
             log_path = write_translation_error_log(output_dir, args, exc)

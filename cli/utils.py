@@ -228,6 +228,10 @@ def select_shallow_thinking_agent(provider) -> str:
             ("NVIDIA Nemotron 3 Nano 30B (free)", "nvidia/nemotron-3-nano-30b-a3b:free"),
             ("Z.AI GLM 4.5 Air (free)", "z-ai/glm-4.5-air:free"),
         ],
+        "jd": [
+            ("GLM-5", "GLM-5"),
+            ("MiniMax-M2.5", "MiniMax-M2.5"),
+        ],
         "ollama": ollama_choices,
     }
 
@@ -302,6 +306,10 @@ def select_deep_thinking_agent(provider) -> str:
             ("Z.AI GLM 4.5 Air (free)", "z-ai/glm-4.5-air:free"),
             ("NVIDIA Nemotron 3 Nano 30B (free)", "nvidia/nemotron-3-nano-30b-a3b:free"),
         ],
+        "jd": [
+            ("MiniMax-M2.5", "MiniMax-M2.5"),
+            ("GLM-5", "GLM-5"),
+        ],
         "ollama": ollama_choices,
     }
 
@@ -338,6 +346,7 @@ def select_llm_provider() -> tuple[str, str]:
         ("Zhipu GLM", "zhipu", "https://open.bigmodel.cn/api/paas/v4"),
         ("Openrouter", "openrouter", "https://openrouter.ai/api/v1"),
         ("Ollama", "ollama", "http://localhost:11434/v1"),
+        ("JD", "jd", "https://modelservice.jdcloud.com/coding/openai/v1"),
     ]
     
     choice = questionary.select(

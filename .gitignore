@@ -221,3 +221,29 @@ __marimo__/
 # Local generated reports/results
 reports/
 results/
+
+# TradingAgents temp directories
+tradingagents_batch_*/
+temp_*.json
+
+# OpenClaw local config and temp tasks
+.openclaw/
+openclaw/config/
+openclaw/tasks/positions_*.json
+!openclaw/tasks/positions_morning.json
+!openclaw/tasks/positions_evening.json
+!openclaw/tasks/positions_watchlist.json
+
+# Position files (contain personal stock holdings)
+positions.txt
+positions.csv
+positions_sample.csv
+positions_*.txt
+positions_*.csv
+
+# OpenClaw task files with position info
+openclaw/tasks/positions_*.json
+
+# Debug scripts
+debug_*.py
+eval_results/

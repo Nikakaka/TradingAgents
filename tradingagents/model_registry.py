@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 
-DEFAULT_PROVIDER = "zhipu"
+DEFAULT_PROVIDER = "jd"
 
 PROVIDER_SPECS = {
     "openai": {
@@ -117,6 +117,22 @@ PROVIDER_SPECS = {
             "deep": "glm-4.7-flash:latest",
         },
     },
+    "jd": {
+        "label": "jd",
+        "base_url": "https://modelservice.jdcloud.com/coding/openai/v1",
+        "api_key_label": "JD API Key",
+        "api_key_placeholder": "输入 JD_API_KEY",
+        "api_key_helper": "可直接覆盖当前分析任务使用的 JD Key；留空时沿用本机已有环境变量。",
+        "requires_api_key": True,
+        "models": {
+            "quick": ["MiniMax-M2.5"],
+            "deep": ["GLM-5"],
+        },
+        "defaults": {
+            "quick": "MiniMax-M2.5",
+            "deep": "GLM-5",
+        },
+    }
 }
 
 

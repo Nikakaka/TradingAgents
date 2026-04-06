@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import gc
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +84,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         help="Delay in seconds between tasks to reduce provider burst traffic.",
+    )
+    parser.add_argument(
+        "--regenerate-summary",
+        action="store_true",
+        help="Regenerate batch summary from existing result files without running analysis.",
     )
     return parser.parse_args()
 
@@ -235,6 +241,9 @@ def run_task_with_retries(
         result["attempt"] = attempt
         last_result = result
 
+        # Force garbage collection after each task to free memory
+        gc.collect()
+
         should_retry = (
             retry_on_rate_limit
             and not dry_run
@@ -353,15 +362,22 @@ def extract_report_summary(content: str) -> str:
 
 
 def extract_decision_from_text(content: str) -> str | None:
+    """Extract trading decision from text content.
+
+    Supports 5-level rating system: BUY, OVERWEIGHT, HOLD, UNDERWEIGHT, SELL
+    """
     if not content:
         return None
 
+    # Decision patterns in order of priority (most specific first)
+    # OVERWEIGHT/UNDERWEIGHT must be checked before BUY/SELL to avoid partial matches
     patterns = (
-        r"FINAL RECOMMENDATION:\s*(BUY|HOLD|SELL)",
-        r"FINAL TRANSACTION PROPOSAL:\s*\**\s*(BUY|HOLD|SELL)",
-        r"RATING:\s*(BUY|HOLD|SELL)",
-        r"RECOMMENDATION:\s*(BUY|HOLD|SELL)",
-        r"\b(Buy|Hold|Sell)\b",
+        r"FINAL RECOMMENDATION:\s*(OVERWEIGHT|UNDERWEIGHT|BUY|HOLD|SELL)",
+        r"FINAL TRANSACTION PROPOSAL:\s*\**\s*(OVERWEIGHT|UNDERWEIGHT|BUY|HOLD|SELL)",
+        r"RATING:\s*\*{0,2}\s*(OVERWEIGHT|UNDERWEIGHT|BUY|HOLD|SELL)",
+        r"RECOMMENDATION:\s*(OVERWEIGHT|UNDERWEIGHT|BUY|HOLD|SELL)",
+        r"RATING:\s*(OVERWEIGHT|UNDERWEIGHT|BUY|HOLD|SELL)",
+        r"\b(Overweight|Underweight|Buy|Hold|Sell)\b",
     )
     match = None
     for pattern in patterns:
@@ -376,21 +392,27 @@ def extract_decision_from_text(content: str) -> str | None:
 def decision_label(decision: str | None) -> str:
     mapping = {
         "BUY": "\u4e70\u5165",
+        "OVERWEIGHT": "\u589e\u6301",
         "HOLD": "\u6301\u6709",
+        "UNDERWEIGHT": "\u51cf\u6301",
         "SELL": "\u5356\u51fa",
     }
     return mapping.get((decision or "").upper(), decision or "\u672a\u77e5")
 
 
 def decision_bucket(item: dict[str, Any]) -> str:
+    """Bucket items by decision for summary grouping.
+
+    Groups: buy (BUY, OVERWEIGHT), hold, sell (SELL, UNDERWEIGHT), other, failed
+    """
     if item.get("status") not in {"ok", "dry_run"}:
         return "failed"
     decision = extract_decision_from_text(str(item.get("decision") or "")) or str(item.get("decision") or "").upper()
-    if decision == "BUY":
+    if decision in ("BUY", "OVERWEIGHT"):
         return "buy"
     if decision == "HOLD":
         return "hold"
-    if decision == "SELL":
+    if decision in ("SELL", "UNDERWEIGHT"):
         return "sell"
     return "other"
 
@@ -509,6 +531,25 @@ def build_markdown_summary(items: list[dict[str, Any]], batch_file: str) -> str:
         "",
     ]
 
+    # Add portfolio summary if position info available
+    positions_with_pnl = [item for item in items if item.get("position_info")]
+    if positions_with_pnl:
+        total_value = sum(
+            item["position_info"].get("market_value", 0) or 0
+            for item in positions_with_pnl
+        )
+        total_pnl = sum(
+            item["position_info"].get("profit_loss", 0) or 0
+            for item in positions_with_pnl
+        )
+        if total_value > 0:
+            total_pnl_pct = (total_pnl / total_value) * 100
+            lines.append("## \u6301\u4ed3\u6c47\u603b")
+            lines.append("")
+            lines.append(f"- \u603b\u5e02\u503c\uff1a\u00a5{total_value:,.2f}")
+            lines.append(f"- \u603b\u76c8\u4e8f\uff1a\u00a5{total_pnl:,.2f} ({total_pnl_pct:+.2f}%)")
+            lines.append("")
+
     lines.append("## \u7ed3\u8bba\u603b\u89c8")
     lines.append("")
     lines.append("| \u6807\u7684 | \u7ed3\u8bba | \u53d8\u5316 | \u72b6\u6001 |")
@@ -544,6 +585,24 @@ def build_markdown_summary(items: list[dict[str, Any]], batch_file: str) -> str:
             if decision:
                 lines.append(f"- \u6700\u7ec8\u7ed3\u8bba\uff1a{decision_label(str(decision).upper())}")
             lines.append(f"- \u7ed3\u8bba\u53d8\u5316\uff1a{item.get('decision_change') or '-'}")
+
+            # Position info
+            pos_info = item.get("position_info")
+            if pos_info:
+                lines.append("")
+                lines.append("**\u6301\u4ed3\u4fe1\u606f**")
+                if pos_info.get("quantity"):
+                    lines.append(f"- \u6301\u4ed3\u6570\u91cf\uff1a{pos_info['quantity']}")
+                if pos_info.get("cost_price"):
+                    lines.append(f"- \u6210\u672c\u4ef7\uff1a\u00a5{pos_info['cost_price']:.2f}")
+                if pos_info.get("market_value"):
+                    lines.append(f"- \u5e02\u503c\uff1a\u00a5{pos_info['market_value']:,.2f}")
+                if pos_info.get("profit_loss") is not None:
+                    pnl = pos_info['profit_loss']
+                    pnl_pct = pos_info.get('profit_loss_pct', 0) or 0
+                    pnl_sign = "+" if pnl >= 0 else ""
+                    lines.append(f"- \u76c8\u4e8f\uff1a\u00a5{pnl:,.2f} ({pnl_sign}{pnl_pct:.2f}%)")
+
             if item.get("previous_report_file"):
                 lines.append(f"- \u4e0a\u4e00\u4efd\u62a5\u544a\uff1a`{item['previous_report_file']}`")
             if item.get("report_summary"):
@@ -568,42 +627,103 @@ def write_text_output(path_value: str | None, content: str, encoding: str = "utf
     return str(path)
 
 
+def load_existing_result(task: dict[str, Any], index: int) -> dict[str, Any] | None:
+    """Load existing result from result_json path if available.
+
+    Returns None if result file doesn't exist or is invalid.
+    """
+    result_json = task.get("result_json")
+    if not result_json:
+        return None
+
+    result_path = resolve_path(result_json)
+    if result_path is None or not result_path.exists():
+        return None
+
+    try:
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        payload["result_json"] = str(result_path)
+        payload["loaded_from_existing"] = True
+        return payload
+    except Exception:
+        return None
+
+
+def regenerate_summary_from_existing_results(
+    tasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Regenerate results from existing result files without running analysis.
+
+    This is useful when individual stock analyses have been re-run and the
+    batch summary needs to be updated.
+    """
+    results: list[dict[str, Any]] = []
+    for index, task in enumerate(tasks):
+        ticker = task.get("ticker") or f"task_{index + 1}"
+        result = load_existing_result(task, index)
+
+        if result is None:
+            result = {
+                "status": "error",
+                "ticker": task.get("ticker"),
+                "analysis_date": task.get("analysis_date"),
+                "error": f"Result file not found or invalid for {ticker}",
+                "result_json": task.get("result_json"),
+            }
+        else:
+            result["status"] = result.get("status", "ok")
+
+        results.append(result)
+        print(
+            f"[regenerate] loaded {ticker} with status={result.get('status')}",
+            flush=True,
+        )
+
+    return results
+
+
 def main() -> int:
     args = parse_args()
     tasks = load_batch_file(args.batch_file)
     results: list[dict[str, Any]] = []
 
-    for index, task in enumerate(tasks):
-        ticker = task.get("ticker") or f"task_{index + 1}"
-        print(
-            f"[batch] starting {index + 1}/{len(tasks)}: {ticker}",
-            flush=True,
-        )
-        result = run_task_with_retries(
-            task,
-            index,
-            args.dry_run,
-            args.retry_on_rate_limit,
-            max(args.max_rate_limit_retries, 0),
-            max(args.retry_backoff_seconds, 1),
-        )
-        results.append(result)
-        print(
-            f"[batch] finished {ticker} with status={result.get('status')} attempt={result.get('attempt', 1)}",
-            flush=True,
-        )
-        if args.stop_on_error and result.get("status") == "error":
-            break
-        if (
-            not args.dry_run
-            and index < len(tasks) - 1
-            and args.inter_task_delay_seconds > 0
-        ):
+    # Regenerate summary mode: load existing results without running analysis
+    if args.regenerate_summary:
+        print("[batch] regenerating summary from existing result files", flush=True)
+        results = regenerate_summary_from_existing_results(tasks)
+    else:
+        # Normal mode: run analysis for each task
+        for index, task in enumerate(tasks):
+            ticker = task.get("ticker") or f"task_{index + 1}"
             print(
-                f"[batch] sleeping {args.inter_task_delay_seconds}s before next task",
+                f"[batch] starting {index + 1}/{len(tasks)}: {ticker}",
                 flush=True,
             )
-            time.sleep(args.inter_task_delay_seconds)
+            result = run_task_with_retries(
+                task,
+                index,
+                args.dry_run,
+                args.retry_on_rate_limit,
+                max(args.max_rate_limit_retries, 0),
+                max(args.retry_backoff_seconds, 1),
+            )
+            results.append(result)
+            print(
+                f"[batch] finished {ticker} with status={result.get('status')} attempt={result.get('attempt', 1)}",
+                flush=True,
+            )
+            if args.stop_on_error and result.get("status") == "error":
+                break
+            if (
+                not args.dry_run
+                and index < len(tasks) - 1
+                and args.inter_task_delay_seconds > 0
+            ):
+                print(
+                    f"[batch] sleeping {args.inter_task_delay_seconds}s before next task",
+                    flush=True,
+                )
+                time.sleep(args.inter_task_delay_seconds)
 
     enriched_results = enrich_results(results)
     summary = {

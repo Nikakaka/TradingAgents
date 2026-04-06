@@ -210,6 +210,7 @@ _PROVIDER_CONFIG = {
     "xai": ("https://api.x.ai/v1", "XAI_API_KEY"),
     "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
     "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "ZHIPUAI_API_KEY"),
+    "jd": ("https://modelservice.jdcloud.com/coding/openai/v1", "JD_API_KEY"),
     "ollama": ("http://localhost:11434/v1", None),
 }
 
