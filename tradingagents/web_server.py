@@ -635,6 +635,13 @@ def markdown_to_html(markdown_text: str) -> str:
     flush_unordered()
     flush_ordered()
     flush_quote()
+
+    # Handle unclosed code block (can happen if LLM output is malformed)
+    if in_code:
+        code_html = html.escape("\n".join(code_lines))
+        class_attr = f' class="language-{html.escape(code_lang)}"' if code_lang else ""
+        html_parts.append(f"<pre><code{class_attr}>{code_html}</code></pre>")
+
     return "\n".join(html_parts)
 
 
