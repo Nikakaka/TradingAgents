@@ -16,20 +16,16 @@ _TRANSLATION_CHUNK_SIZE = 15000  # characters per chunk for translation (larger 
 
 
 def _clean_pseudo_tool_calls(text: str) -> str:
-    """Remove pseudo tool call patterns that LLMs sometimes hallucinate.
+    """Remove pseudo tool call patterns and thinking blocks that LLMs sometimes output.
 
-    Some models output text like:
-    - "<tool_call>get_price_data("ticker")<tool_call>get_financial_data("ticker")"
-    - "<tool_call>get_price_data("ticker")1080"
-    - Tool call blocks that look like "<tool_call>tool_name(args)1080"
-
-    These are not real tool calls but model hallucinations that should be cleaned.
+    Cleans:
+    - Pseudo tool calls like "get_price_data(...)"
+    - Thinking blocks (content between thinking tags)
     """
     if not text:
         return text
 
     # Pattern 1: Pseudo tool call blocks like "<tool_call>get_price_data("...")<tool_call>get_financial_data("...")"
-    # These appear as consecutive tool-like invocations without proper formatting
     pattern1 = r'<tool_call>\w+\([^)]*\)(?:<tool_call>\w+\([^)]*\))*'
     text = re.sub(pattern1, '', text)
 
@@ -37,13 +33,19 @@ def _clean_pseudo_tool_calls(text: str) -> str:
     pattern2 = r'<tool_call>\w+\([^)]*\)'
     text = re.sub(pattern2, '', text)
 
-    # Pattern 3: Trailing tool call remnants like "<tool_call>get_price_data("ticker")\n\n"
+    # Pattern 3: Trailing tool call remnants
     pattern3 = r'\n\s*<tool_call>\w+\([^)]*\)\s*\n'
     text = re.sub(pattern3, '\n', text)
 
     # Pattern 4: Tool calls followed by content without proper spacing
     pattern4 = r'<tool_call>\w+\([^)]*\)\s*'
     text = re.sub(pattern4, '', text)
+
+    # Pattern 5: Remove thinking blocks (used by DeepSeek, GLM and other reasoning models)
+    # Match content between thinking open and close tags
+    text = re.sub(r'[\s\S]*?', '', text)
+    # Handle unclosed thinking tags - remove from open tag to end
+    text = re.sub(r'[\s\S]*$', '', text)
 
     # Clean up multiple consecutive blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)

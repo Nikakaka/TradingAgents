@@ -16,6 +16,11 @@ def _clean_pseudo_tool_calls(text: str) -> str:
     text = re.sub(pattern3, '\n', text)
     pattern4 = r'<tool_call>\w+\([^)]*\)\s*'
     text = re.sub(pattern4, '', text)
+
+    # Pattern 5: Remove thinking blocks (used by DeepSeek, GLM reasoning models)
+    text = re.sub(r'[\s\S]*?', '', text)
+    text = re.sub(r'[\s\S]*$', '', text)
+
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
