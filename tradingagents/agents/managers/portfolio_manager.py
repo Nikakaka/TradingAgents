@@ -63,10 +63,13 @@ def create_portfolio_manager(llm, memory):
 - Trader's proposed plan: **{trader_plan}**
 - Lessons from past decisions: **{past_memory_str}**
 
-**Required Output Structure:**
-1. **Rating**: State one of Buy / Overweight / Hold / Underweight / Sell.
-2. **Executive Summary**: A concise action plan covering entry strategy, position sizing, key risk levels, and time horizon.
-3. **Investment Thesis**: Detailed reasoning anchored in the analysts' debate and past reflections.
+**Required Output Structure (STRICTLY follow this format):**
+
+**Rating**: [One of: Buy / Overweight / Hold / Underweight / Sell]
+
+**Executive Summary**: [2-3 sentences on entry strategy, position sizing, key risk levels, and time horizon]
+
+**Investment Thesis**: [Detailed reasoning anchored in the analysts' debate]
 
 ---
 
@@ -75,7 +78,12 @@ def create_portfolio_manager(llm, memory):
 
 ---
 
-Be decisive and ground every conclusion in specific evidence from the analysts."""
+**IMPORTANT**: Start your response with the Rating line. Do not add introductory text before the Rating.
+
+Example output:
+**Rating**: Hold
+**Executive Summary**: Maintain current position with tight stop-loss at key support. Wait for technical confirmation before adding exposure.
+**Investment Thesis**: The fundamental growth story remains intact, but near-term technical weakness and insider selling warrant caution..."""
 
         response = llm.invoke(prompt)
 
