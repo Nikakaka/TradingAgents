@@ -48,9 +48,10 @@ def quick_import():
         root.call('wm', 'attributes', '.', '-topmost', True)
 
         file_path = filedialog.askopenfilename(
-            title="选择持仓文件 (CSV/Excel)",
+            title="选择持仓文件 (TXT/CSV/Excel)",
             filetypes=[
-                ("所有支持的格式", "*.csv *.xlsx *.xls"),
+                ("所有支持的格式", "*.txt *.csv *.xlsx *.xls"),
+                ("通达信导出", "*.txt"),
                 ("CSV文件", "*.csv"),
                 ("Excel文件", "*.xlsx *.xls"),
                 ("所有文件", "*.*")
@@ -97,7 +98,7 @@ def quick_import():
 
     # Step 3: 复制到项目目录
     print("\n[步骤3] 复制到项目目录...")
-    project_file = Path(__file__).parent.parent / "positions.csv"
+    project_file = Path(__file__).parent.parent / "positions.txt"
 
     import shutil
     shutil.copy(file_path, project_file)
@@ -109,7 +110,7 @@ def quick_import():
 
     if choice == 'y':
         print("\n正在运行分析...")
-        os.system(f'python scripts/auto_position_analysis.py --positions-file positions.csv --force')
+        os.system(f'python scripts/position_analysis.py analyze --positions-file positions.txt')
 
 
 def watch_folder():
@@ -140,11 +141,11 @@ def watch_folder():
 
                         # 复制为默认文件
                         import shutil
-                        shutil.copy(csv_file, project_dir / "positions.csv")
-                        print(f"[OK] 已更新 positions.csv")
+                        shutil.copy(csv_file, project_dir / "positions.txt")
+                        print(f"[OK] 已更新 positions.txt")
 
                         # 运行分析
-                        os.system(f'python scripts/auto_position_analysis.py --positions-file positions.csv --force')
+                        os.system(f'python scripts/position_analysis.py analyze --positions-file positions.txt')
 
                     except Exception as e:
                         print(f"[ERROR] 处理失败: {e}")

@@ -248,10 +248,13 @@ def _text_excerpt(text: str, limit: int = 220) -> str:
 
 
 def _extract_rating(text: str) -> str:
+    # First try to extract from explicit "Rating:" field
     match = re.search(r"Rating\*?\*?:\s*([A-Za-z]+)", text or "", flags=re.IGNORECASE)
     if match:
         return match.group(1).capitalize()
-    match = re.search(r"\b(Buy|Sell|Hold)\b", text or "", flags=re.IGNORECASE)
+    # Then search for any valid rating keyword (5-level scale)
+    # Order matters: check longer matches first to avoid partial matches
+    match = re.search(r"\b(Overweight|Underweight|Buy|Sell|Hold)\b", text or "", flags=re.IGNORECASE)
     return match.group(1).capitalize() if match else "Unknown"
 
 
