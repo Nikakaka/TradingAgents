@@ -193,12 +193,20 @@ function updateProviderDependentFields() {
   els.quickModel.dataset.provider = provider;
   els.deepModel.dataset.provider = provider;
   const requiresApiKey = providerMeta?.requires_api_key !== false;
+  const hasEnvKey = state.options.providers_with_env_key?.includes(provider);
   els.apiKeyField.hidden = !requiresApiKey;
   els.apiKey.disabled = !requiresApiKey;
   els.apiKey.value = requiresApiKey ? els.apiKey.value : "";
   els.apiKeyLabel.textContent = providerMeta?.api_key_label || "API Key";
   els.apiKey.placeholder = providerMeta?.api_key_placeholder || "输入当前模型供应商的 API Key";
-  els.apiKeyHelper.textContent = providerMeta?.api_key_helper || "可直接覆盖当前任务使用的 API Key；留空时沿用本机已有环境变量。";
+  // Show different helper text based on whether env key exists
+  if (hasEnvKey) {
+    els.apiKeyHelper.textContent = "✓ 已从环境变量读取，留空使用已有 Key，也可输入覆盖。";
+    els.apiKeyHelper.style.color = "#22c55e";
+  } else {
+    els.apiKeyHelper.textContent = providerMeta?.api_key_helper || "可直接覆盖当前任务使用的 API Key；留空时沿用本机已有环境变量。";
+    els.apiKeyHelper.style.color = "";
+  }
 }
 
 function renderJobs() {

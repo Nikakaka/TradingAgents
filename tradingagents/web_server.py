@@ -219,6 +219,13 @@ def get_ui_options() -> Dict[str, Any]:
             "quick": provider_quick,
             "deep": provider_deep,
         }
+
+    # Check which providers have API keys already configured in environment
+    providers_with_env_key = []
+    for provider_id, env_name in PROVIDER_API_KEY_ENV.items():
+        if os.environ.get(env_name):
+            providers_with_env_key.append(provider_id)
+
     return {
         "providers": PROVIDER_OPTIONS,
         "models": models,
@@ -228,6 +235,7 @@ def get_ui_options() -> Dict[str, Any]:
             {"label": "Medium", "value": 3},
             {"label": "Deep", "value": 5},
         ],
+        "providers_with_env_key": providers_with_env_key,
         "defaults": {
             "provider": default_provider,
             "quick_model": default_quick,
