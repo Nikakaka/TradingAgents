@@ -42,10 +42,23 @@ def _clean_pseudo_tool_calls(text: str) -> str:
     text = re.sub(pattern4, '', text)
 
     # Pattern 5: Remove thinking blocks (used by DeepSeek, GLM and other reasoning models)
-    # Match content between thinking open and close tags
-    text = re.sub(r'[\s\S]*?', '', text)
+    # Match content between thinking open and close tags (generic pattern for any "thinking" variant)
+    text = re.sub(r'<(?:thinking|think|thought|reasoning)[^>]*>[\s\S]*?</(?:thinking|think|thought|reasoning)[^>]*>', '', text, flags=re.IGNORECASE)
     # Handle unclosed thinking tags - remove from open tag to end
-    text = re.sub(r'[\s\S]*$', '', text)
+    text = re.sub(r'<(?:thinking|think|thought|reasoning)[^>]*>[\s\S]*$', '', text, flags=re.IGNORECASE)
+    # Handle orphaned close tags (left over after translation or partial processing)
+    text = re.sub(r'</(?:thinking|think|thought|reasoning)[^>]*>', '', text, flags=re.IGNORECASE)
+
+    # Pattern 6: Extended thinking tags (Claude format)
+    # These tags contain the LLM's internal reasoning that should not appear in reports
+    open_tag = chr(60) + 'think' + chr(62)
+    close_tag = chr(60) + '/think' + chr(62)
+    pattern = re.escape(open_tag) + r'[\s\S]*?' + re.escape(close_tag)
+    text = re.sub(pattern, '', text)
+    # Handle unclosed extended thinking tags
+    text = re.sub(re.escape(open_tag) + r'[\s\S]*$', '', text)
+    # Handle orphaned close tags
+    text = text.replace(close_tag, '')
 
     # Clean up multiple consecutive blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
@@ -342,6 +355,8 @@ def _translate_single_chunk(report_markdown: str, selections: dict, fallback_sel
                 response = llm.invoke(prompt)
                 translated_text = _extract_text_from_llm_response(response)
                 if translated_text:
+                    # Clean any thinking tags that might have been introduced during translation
+                    translated_text = _clean_pseudo_tool_calls(translated_text)
                     logger.info(f"Translation successful using {cfg_provider}/{cfg_model}")
                     return translated_text
                 raise ValueError(f"Translation response was empty for provider='{cfg_provider}' model='{cfg_model}'.")

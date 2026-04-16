@@ -17,9 +17,12 @@ REM - Increased recursion limit to 600
 REM - Memory cleanup between stocks
 REM - 2-hour timeout for batch analysis
 REM
+REM Position files are read from G:\Finance\持仓 (latest file by date)
+REM
 
 set "SCRIPT_DIR=%~dp0"
 set "PYTHON_EXE=%SCRIPT_DIR%.venv\Scripts\python.exe"
+set "POSITIONS_DIR=G:\Finance\持仓"
 
 if not exist "%PYTHON_EXE%" (
     echo [ERROR] Python not found: %PYTHON_EXE%
@@ -54,13 +57,14 @@ echo ============================================================
 echo OpenClaw %TASK_NAME%
 echo Time: %DATE% %TIME%
 echo Depth: %DEPTH%
+echo Positions Dir: %POSITIONS_DIR%
 echo Timeout: %TIMEOUT% seconds
 echo ============================================================
 echo.
 
-REM Step 1: Update task file
-echo [STEP 1] Updating task file...
-"%PYTHON_EXE%" "%SCRIPT_DIR%scripts\generate_position_tasks.py" --depth %DEPTH% --output "%SCRIPT_DIR%%TASK_FILE%"
+REM Step 1: Update task file (read latest positions from G:\Finance\持仓)
+echo [STEP 1] Updating task file from latest positions...
+"%PYTHON_EXE%" "%SCRIPT_DIR%scripts\generate_position_tasks.py" --positions-dir "%POSITIONS_DIR%" --depth %DEPTH% --output "%SCRIPT_DIR%%TASK_FILE%"
 if errorlevel 1 (
     echo [ERROR] Failed to generate task file
     exit /b 1

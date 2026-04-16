@@ -256,13 +256,27 @@ def _text_excerpt(text: str, limit: int = 220) -> str:
 
 
 def _extract_rating(text: str) -> str:
-    # First try to extract from explicit "Rating:" field
-    match = re.search(r"Rating\*?\*?:\s*([A-Za-z]+)", text or "", flags=re.IGNORECASE)
+    # Clean extended thinking tags first to avoid interference
+    text = _clean_extended_thinking_tags(text or "")
+
+    # First try to extract from "FINAL TRANSACTION PROPOSAL:" pattern (most reliable)
+    match = re.search(r"FINAL\s+TRANSACTION\s+PROPOSAL:\s*\*{0,2}(Buy|Sell|Hold|Overweight|Underweight)\*{0,2}", text, flags=re.IGNORECASE)
     if match:
         return match.group(1).capitalize()
-    # Then search for any valid rating keyword (5-level scale)
-    # Order matters: check longer matches first to avoid partial matches
-    match = re.search(r"\b(Overweight|Underweight|Buy|Sell|Hold)\b", text or "", flags=re.IGNORECASE)
+
+    # Then try to extract from "Rating:" field (but only valid ratings)
+    match = re.search(r"Rating\*?\*?:\s*\*{0,2}(Buy|Sell|Hold|Overweight|Underweight)\*{0,2}", text, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).capitalize()
+
+    # Then search for any valid rating keyword (5-level scale) with more context
+    # Look for patterns like "Recommendation: Buy" or "Decision: Hold"
+    match = re.search(r"(?:Recommendation|Decision|Rating|Verdict|Action)[:\s]+\*{0,2}(Buy|Sell|Hold|Overweight|Underweight)\*{0,2}", text, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).capitalize()
+
+    # Finally, just search for the rating keyword (order matters: check longer matches first)
+    match = re.search(r"\b(Overweight|Underweight|Buy|Sell|Hold)\b", text, flags=re.IGNORECASE)
     return match.group(1).capitalize() if match else "Unknown"
 
 
@@ -439,6 +453,11 @@ def _summarize_report_excerpt(text: str, limit: int = 220) -> str:
 
 
 def _extract_preferred_summary(translated_text: str, decision_text: str, fallback_text: str) -> str:
+    # Clean extended thinking tags from all inputs first
+    decision_text = _clean_extended_thinking_tags(decision_text or "")
+    translated_text = _clean_extended_thinking_tags(translated_text or "")
+    fallback_text = _clean_extended_thinking_tags(fallback_text or "")
+
     decision_summary = (
         _extract_numbered_section(decision_text, "Investment Thesis")
         or _extract_numbered_section(decision_text, "Executive Summary")
@@ -483,8 +502,46 @@ def _escape_inline(text: str) -> str:
     return escaped
 
 
+def _clean_extended_thinking_tags(text: str) -> str:
+    """Remove extended thinking tags (Claude/Anthropic format) from text.
+
+    Cleans:
+    - 	html...	 blocks (Claude extended thinking format)
+    - <thinking>...</thinking> blocks
+    - Any orphaned close tags
+    """
+    if not text:
+        return text
+
+    # Pattern 1: 	html...	 blocks (Claude extended thinking format)
+    # These tags contain the LLM's internal reasoning that should not appear in reports
+    open_tag = chr(60) + 'think' + chr(62)  #
+    close_tag = chr(60) + '/think' + chr(62)  #
+
+    pattern = re.escape(open_tag) + r'[\s\S]*?' + re.escape(close_tag)
+    text = re.sub(pattern, '', text)
+
+    # Pattern 2: Standard <thinking>...</thinking> blocks
+    text = re.sub(r'<thinking[^>]*>[\s\S]*?</thinking>', '', text, flags=re.IGNORECASE)
+
+    # Pattern 3: Handle unclosed thinking tags - remove from open tag to end
+    text = re.sub(re.escape(open_tag) + r'[\s\S]*$', '', text)
+    text = re.sub(r'<thinking[^>]*>[\s\S]*$', '', text, flags=re.IGNORECASE)
+
+    # Pattern 4: Handle orphaned close tags
+    text = text.replace(close_tag, '')
+    text = re.sub(r'</thinking>', '', text, flags=re.IGNORECASE)
+
+    # Clean up multiple consecutive blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
+
 def markdown_to_html(markdown_text: str) -> str:
-    lines = (markdown_text or "").replace("\r\n", "\n").split("\n")
+    # Clean extended thinking tags before processing
+    markdown_text = _clean_extended_thinking_tags(markdown_text or "")
+    lines = markdown_text.replace("\r\n", "\n").split("\n")
     html_parts: List[str] = []
     paragraph: List[str] = []
     unordered: List[str] = []
@@ -660,6 +717,12 @@ def load_report_list() -> List[Dict[str, Any]]:
         complete_text = complete_path.read_text(encoding="utf-8", errors="ignore") if complete_path.exists() else ""
         translated_path = folder / "complete_report_zh.md"
         translated_text = translated_path.read_text(encoding="utf-8", errors="ignore") if translated_path.exists() else ""
+
+        # Clean extended thinking tags from all text content
+        decision_text = _clean_extended_thinking_tags(decision_text)
+        complete_text = _clean_extended_thinking_tags(complete_text)
+        translated_text = _clean_extended_thinking_tags(translated_text)
+
         usable_translation = bool(translated_text and not _looks_mojibake(translated_text))
         preferred_report_text = translated_text if usable_translation else complete_text
         list_summary = _summarize_report_excerpt(
@@ -734,6 +797,12 @@ def load_report_detail(report_id: str) -> Dict[str, Any]:
     complete_text = complete_path.read_text(encoding="utf-8", errors="ignore") if complete_path.exists() else ""
     translated_path = report_dir / "complete_report_zh.md"
     translated_text = translated_path.read_text(encoding="utf-8", errors="ignore") if translated_path.exists() else ""
+
+    # Clean extended thinking tags from all text content
+    decision_text = _clean_extended_thinking_tags(decision_text)
+    complete_text = _clean_extended_thinking_tags(complete_text)
+    translated_text = _clean_extended_thinking_tags(translated_text)
+
     usable_translation = bool(translated_text and not _looks_mojibake(translated_text))
     preferred_full_text = translated_text if usable_translation else complete_text
     detail_summary = (
