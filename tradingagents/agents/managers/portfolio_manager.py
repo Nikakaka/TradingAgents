@@ -18,8 +18,21 @@ def _clean_pseudo_tool_calls(text: str) -> str:
     text = re.sub(pattern4, '', text)
 
     # Pattern 5: Remove thinking blocks (used by DeepSeek, GLM reasoning models)
-    text = re.sub(r'[\s\S]*?', '', text)
-    text = re.sub(r'[\s\S]*$', '', text)
+    text = re.sub(r'<think>[\s\S]*?</think>', '', text)
+    text = re.sub(r'<think>[\s\S]*$', '', text)
+    # Handle orphaned close tags
+    text = text.replace('</think>', '')
+
+    # Pattern 6: Extended thinking tags (Claude format)
+    # These tags contain the LLM's internal reasoning that should not appear in reports
+    open_tag = chr(60) + 'think' + chr(62)
+    close_tag = chr(60) + '/think' + chr(62)
+    pattern = re.escape(open_tag) + r'[\s\S]*?' + re.escape(close_tag)
+    text = re.sub(pattern, '', text)
+    # Handle unclosed extended thinking tags
+    text = re.sub(re.escape(open_tag) + r'[\s\S]*$', '', text)
+    # Handle orphaned close tags
+    text = text.replace(close_tag, '')
 
     text = re.sub(r'\n{3,}', '\n\n', text)
 
