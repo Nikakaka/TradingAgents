@@ -247,57 +247,62 @@ def _extract_rating(text: str) -> str:
     # Clean extended thinking tags first to avoid interference
     text = _clean_extended_thinking_tags(text or "")
 
-    # Chinese rating patterns (check first since reports are now in Chinese)
-    chinese_patterns = [
-        # 买入/增持 -> Buy
-        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(买入|增持)\*{0,2}", "Buy"),
-        (r"\*\*评级\*\*[:\s]*\*{0,2}(买入|增持)\*{0,2}", "Buy"),
-        (r"\b(买入|增持)\b", "Buy"),
-
-        # 卖出/减持 -> Sell
-        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(卖出|减持)\*{0,2}", "Sell"),
-        (r"\*\*评级\*\*[:\s]*\*{0,2}(卖出|减持)\*{0,2}", "Sell"),
-        (r"\b(卖出|减持)\b", "Sell"),
-
-        # 持有/中性 -> Hold
-        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(持有|中性)\*{0,2}", "Hold"),
-        (r"\*\*评级\*\*[:\s]*\*{0,2}(持有|中性)\*{0,2}", "Hold"),
-        (r"\b(持有|中性)\b", "Hold"),
-
-        # 超配/高配 -> Overweight
-        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(超配|高配)\*{0,2}", "Overweight"),
-        (r"\*\*评级\*\*[:\s]*\*{0,2}(超配|高配)\*{0,2}", "Overweight"),
-        (r"\b(超配|高配)\b", "Overweight"),
-
-        # 低配 -> Underweight
-        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(低配)\*{0,2}", "Underweight"),
-        (r"\*\*评级\*\*[:\s]*\*{0,2}(低配)\*{0,2}", "Underweight"),
-        (r"\b低配\b", "Underweight"),
+    # Priority 1: Check for explicit rating patterns first (most reliable)
+    # These patterns require a rating label prefix to avoid false matches
+    explicit_rating_patterns = [
+        # Chinese explicit rating patterns
+        (r"\*\*评级\*\*[:\s：]*\*{0,2}(买入|增持)\*{0,2}", "Buy"),
+        (r"\*\*评级\*\*[:\s：]*\*{0,2}(卖出|减持)\*{0,2}", "Sell"),
+        (r"\*\*评级\*\*[:\s：]*\*{0,2}(持有|中性)\*{0,2}", "Hold"),
+        (r"\*\*评级\*\*[:\s：]*\*{0,2}(超配|高配)\*{0,2}", "Overweight"),
+        (r"\*\*评级\*\*[:\s：]*\*{0,2}(低配)\*{0,2}", "Underweight"),
+        # Label prefix patterns
+        (r"(?:评级|结论|建议|决策|操作建议|最终评级)[:\s：]*\*{0,2}(买入|增持)\*{0,2}", "Buy"),
+        (r"(?:评级|结论|建议|决策|操作建议|最终评级)[:\s：]*\*{0,2}(卖出|减持)\*{0,2}", "Sell"),
+        (r"(?:评级|结论|建议|决策|操作建议|最终评级)[:\s：]*\*{0,2}(持有|中性)\*{0,2}", "Hold"),
+        (r"(?:评级|结论|建议|决策|操作建议|最终评级)[:\s：]*\*{0,2}(超配|高配)\*{0,2}", "Overweight"),
+        (r"(?:评级|结论|建议|决策|操作建议|最终评级)[:\s：]*\*{0,2}(低配)\*{0,2}", "Underweight"),
+        # English patterns
+        (r"\*\*Rating\*\*[:\s]*\*{0,2}(Buy|Overweight|Hold|Underweight|Sell)\*{0,2}", None),
+        (r"(?:Rating|Recommendation|Decision|Verdict|Action)[:\s]+\*{0,2}(Buy|Overweight|Hold|Underweight|Sell)\*{0,2}", None),
     ]
 
-    for pattern, rating in chinese_patterns:
+    for pattern, rating in explicit_rating_patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
+            # If rating is None, use the matched group (for English patterns)
+            if rating is None:
+                return match.group(1).capitalize()
             return rating
 
-    # English patterns (for backward compatibility)
-    # First try to extract from "FINAL TRANSACTION PROPOSAL:" pattern (most reliable)
+    # Priority 2: Check for "FINAL TRANSACTION PROPOSAL:" pattern
     match = re.search(r"FINAL\s+TRANSACTION\s+PROPOSAL:\s*\*{0,2}(Buy|Sell|Hold|Overweight|Underweight)\*{0,2}", text, flags=re.IGNORECASE)
     if match:
         return match.group(1).capitalize()
 
-    # Then try to extract from "Rating:" field (but only valid ratings)
-    match = re.search(r"Rating\*?\*?:\s*\*{0,2}(Buy|Sell|Hold|Overweight|Underweight)\*{0,2}", text, flags=re.IGNORECASE)
-    if match:
-        return match.group(1).capitalize()
+    # Priority 3: Check for standalone rating words (least reliable, but check in specific contexts)
+    # Look for rating words at the end of a line or after specific markers
+    standalone_patterns = [
+        (r"最终交易建议[:\s：]*\*{0,2}.*?→\s*\*{0,2}(买入|增持|卖出|减持|持有|中性|超配|高配|低配)\*{0,2}", None),
+        (r"Decision:\s*(Buy|Sell|Hold|Overweight|Underweight)", None),
+    ]
 
-    # Then search for any valid rating keyword (5-level scale) with more context
-    # Look for patterns like "Recommendation: Buy" or "Decision: Hold"
-    match = re.search(r"(?:Recommendation|Decision|Rating|Verdict|Action)[:\s]+\*{0,2}(Buy|Sell|Hold|Overweight|Underweight)\*{0,2}", text, flags=re.IGNORECASE)
-    if match:
-        return match.group(1).capitalize()
+    for pattern, _ in standalone_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            rating_word = match.group(1).lower()
+            rating_map = {
+                "买入": "Buy", "增持": "Buy",
+                "卖出": "Sell", "减持": "Sell",
+                "持有": "Hold", "中性": "Hold",
+                "超配": "Overweight", "高配": "Overweight",
+                "低配": "Underweight",
+                "buy": "Buy", "sell": "Sell", "hold": "Hold",
+                "overweight": "Overweight", "underweight": "Underweight",
+            }
+            return rating_map.get(rating_word, "Unknown")
 
-    # Finally, just search for the rating keyword (order matters: check longer matches first)
+    # Priority 4: Last resort - search for any rating keyword (order matters: longer matches first)
     match = re.search(r"\b(Overweight|Underweight|Buy|Sell|Hold)\b", text, flags=re.IGNORECASE)
     return match.group(1).capitalize() if match else "Unknown"
 
