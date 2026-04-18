@@ -43,18 +43,22 @@ DEFAULT_CONFIG = {
     "max_recur_limit": 800,  # Increased for depth=3 analysis with multiple stocks and complex debates
     # Data vendor configuration - optimized for China A-shares and Hong Kong stocks
     # Category-level configuration (default for all tools in category)
+    # ifind: 同花顺iFinD (付费，数据最全面，支持资金流向)
     # efinance: EastMoney (best for China A-shares, stable and free)
     # sina: Free, no rate limit, HK real-time quotes
     # akshare: A-share/HK data (free, comprehensive)
+    # Note: iFinD requires IFIND_REFRESH_TOKEN or IFIND_USERNAME/IFIND_PASSWORD env vars
     "data_vendors": {
-        # 核心行情数据：efinance(A股) > sina(港股) > akshare > yfinance
-        "core_stock_apis": "efinance,sina,akshare,yfinance",
-        # 技术指标：efinance(A股) > akshare > yfinance
-        "technical_indicators": "efinance,akshare,yfinance",
-        # 基本面数据：akshare(最全面) > yfinance
-        "fundamental_data": "akshare,yfinance",
+        # 核心行情数据：ifind(付费) > efinance(A股) > sina(港股) > akshare > yfinance
+        "core_stock_apis": "ifind,efinance,sina,akshare,yfinance",
+        # 技术指标：ifind(付费) > efinance(A股) > akshare > yfinance
+        "technical_indicators": "ifind,efinance,akshare,yfinance",
+        # 基本面数据：ifind(付费) > akshare(最全面) > yfinance
+        "fundamental_data": "ifind,akshare,yfinance",
         # 新闻数据：akshare(东方财富中文新闻) > yfinance
         "news_data": "akshare,yfinance",
+        # 资金流向：仅ifind支持
+        "capital_flow": "ifind",
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {

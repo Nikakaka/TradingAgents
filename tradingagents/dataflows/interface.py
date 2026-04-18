@@ -34,6 +34,12 @@ from .efinance_cn import (
     get_stock_data as get_efinance_cn_stock,
     get_indicator as get_efinance_cn_indicator,
 )
+from .ifind_data import (
+    get_stock_data_ifind,
+    get_realtime_quote_ifind,
+    get_financial_indicators_ifind,
+    get_capital_flow_ifind,
+)
 from yfinance.exceptions import YFRateLimitError
 
 # Configuration and routing logic
@@ -69,10 +75,17 @@ TOOLS_CATEGORIES = {
             "get_global_news",
             "get_insider_transactions",
         ]
+    },
+    "capital_flow": {
+        "description": "资金流向数据",
+        "tools": [
+            "get_capital_flow",
+        ]
     }
 }
 
 VENDOR_LIST = [
+    "ifind",     # 同花顺iFinD - 专业金融数据（付费，最全面）
     "efinance",  # EastMoney - A股数据（稳定、免费）
     "sina",      # 新浪财经 - 港股实时行情（无速率限制）
     "akshare",   # AKShare - A股/港股数据（全面、免费）
@@ -83,6 +96,7 @@ VENDOR_LIST = [
 VENDOR_METHODS = {
     # core_stock_apis
     "get_stock_data": {
+        "ifind": get_stock_data_ifind,
         "efinance": get_efinance_cn_stock,  # A股 via EastMoney（稳定）
         "sina": get_sina_hk_stock,  # 港股实时数据（无速率限制）
         "akshare": [get_akshare_hk_stock, get_akshare_cn_stock],
@@ -90,12 +104,14 @@ VENDOR_METHODS = {
     },
     # technical_indicators
     "get_indicators": {
+        "ifind": get_financial_indicators_ifind,
         "efinance": get_efinance_cn_indicator,  # A股 via EastMoney
         "akshare": [get_akshare_hk_indicator, get_akshare_cn_indicator],
         "yfinance": get_stock_stats_indicators_window,
     },
     # fundamental_data
     "get_fundamentals": {
+        "ifind": get_financial_indicators_ifind,
         "akshare": get_akshare_fundamentals,
         "yfinance": get_yfinance_fundamentals,
     },
@@ -122,6 +138,10 @@ VENDOR_METHODS = {
     },
     "get_insider_transactions": {
         "yfinance": get_yfinance_insider_transactions,
+    },
+    # capital_flow
+    "get_capital_flow": {
+        "ifind": get_capital_flow_ifind,
     },
 }
 

@@ -6,6 +6,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_indicators,
     get_stock_data,
 )
+from tradingagents.agents.utils.capital_flow_tools import get_capital_flow, get_realtime_quote
 from tradingagents.dataflows.config import get_config
 
 
@@ -14,13 +15,19 @@ def create_market_analyst(llm):
     provider = (config.get("llm_provider") or "").lower()
 
     full_system_message = (
-        "你是一名市场分析师。首先调用 get_stock_data 获取股价数据，然后使用 get_indicators 有条理地分析市场结构。"
-        "有目的地选择趋势、动量、波动率和成交量类指标，避免冗余请求。"
-        "仅使用以下支持的指标名称：close_50_sma, close_200_sma, close_10_ema, macd, macds, macdh, rsi, boll, boll_ub, boll_lb, atr, vwma, mfi。"
-        "每次调用 get_indicators 只查询一个指标。"
-        "撰写一份基于证据的市场报告，涵盖当前价格结构、趋势强度、动量变化、波动率特征、支撑阻力位以及交易启示。"
-        "使用指标证据解释看涨情形和风险情形，然后给出平衡的结论。"
-        "在报告末尾附上一个简短的 Markdown 表格，汇总主要信号。"
+        "你是一名专业的市场分析师。请按以下步骤进行分析：\n"
+        "1. 首先调用 get_stock_data 获取股价历史数据\n"
+        "2. 使用 get_indicators 分析技术指标（趋势、动量、波动率）\n"
+        "3. 调用 get_capital_flow 获取资金流向数据（主力资金、散户资金动向）\n"
+        "4. 如果需要，调用 get_realtime_quote 获取实时行情\n\n"
+        "技术指标选择：从以下列表中选择最多6个指标，每次调用 get_indicators 只查询一个指标：\n"
+        "close_50_sma, close_200_sma, close_10_ema, macd, macds, macdh, rsi, boll, boll_ub, boll_lb, atr, vwma, mfi\n\n"
+        "报告要求：\n"
+        "- 基于数据分析价格趋势、技术形态\n"
+        "- 结合资金流向判断主力动向和市场情绪\n"
+        "- 明确支撑位、阻力位和关键价位\n"
+        "- 给出看涨和看跌两种情形的分析\n"
+        "- 在报告末尾附上 Markdown 表格汇总主要信号\n"
         "请使用中文撰写报告。"
     )
 
@@ -39,10 +46,14 @@ def create_market_analyst(llm):
         current_date = state["trade_date"]
         instrument_context = build_instrument_context(state["company_of_interest"])
 
-        tools = [
-            get_stock_data,
-            get_indicators,
-        ]
+        # 检查是否配置了iFinD（资金流向数据需要）
+        tool_list = [get_stock_data, get_indicators]
+        try:
+            import os
+            if os.environ.get("IFIND_REFRESH_TOKEN") or os.environ.get("IFIND_USERNAME"):
+                tool_list.extend([get_capital_flow, get_realtime_quote])
+        except Exception:
+            pass
 
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -62,11 +73,11 @@ def create_market_analyst(llm):
         )
 
         prompt = prompt.partial(system_message=system_message)
-        prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
+        prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tool_list]))
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(instrument_context=instrument_context)
 
-        chain = prompt | llm.bind_tools(tools)
+        chain = prompt | llm.bind_tools(tool_list)
 
         result = chain.invoke(state["messages"])
 
