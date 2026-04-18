@@ -35,6 +35,14 @@ SUMMARY_HEADINGS = (
     "Key Takeaways",
 )
 
+# Portfolio manager decision section markers (used to find the final executive summary)
+PORTFOLIO_DECISION_MARKERS = (
+    "\u6295\u8d44\u7ec4\u5408\u7ecf\u7406\u51b3\u7b56",  # 投资组合经理决策
+    "\u4e94\u3001\u6295\u8d44\u7ec4\u5408\u7ecf\u7406",  # 五、投资组合经理
+    "Portfolio Manager Decision",
+    "V. \u6295\u8d44\u7ec4\u5408\u7ecf\u7406",  # V. 投资组合经理
+)
+
 DISPLAY_NAME_OVERRIDES = {
     "159934.SZ": "\u9ec4\u91d19999\uff08\u4ee3\u7406\uff1a\u9ec4\u91d1ETF\uff09",
 }
@@ -335,10 +343,82 @@ def extract_sentences(text: str, max_sentences: int = 3, max_chars: int = 320) -
 
 
 def extract_report_summary(content: str) -> str:
+    """Extract summary from report content.
+
+    Priority:
+    1. Executive summary from Portfolio Manager Decision section (most authoritative)
+    2. First available summary section as fallback
+
+    Supports multiple formats:
+    - Markdown heading: ## 执行摘要
+    - Bold inline: **执行摘要**：内容...
+    """
     if not content:
         return ""
 
     lines = content.replace("\r\n", "\n").split("\n")
+
+    # First, try to find the Portfolio Manager Decision section and extract its summary
+    portfolio_section_start = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        for marker in PORTFOLIO_DECISION_MARKERS:
+            if marker in stripped:
+                portfolio_section_start = i
+                break
+        if portfolio_section_start is not None:
+            break
+
+    # If portfolio section found, look for executive summary within it
+    if portfolio_section_start is not None:
+        # Look for executive summary in bold inline format: **执行摘要**：内容
+        for line in lines[portfolio_section_start:]:
+            stripped = line.strip()
+            # Check for bold inline format: **执行摘要**：内容
+            for heading in SUMMARY_HEADINGS[:4]:  # Chinese headings
+                pattern = f"**{heading}**\uff1a"  # **执行摘要**：
+                if pattern in stripped:
+                    # Extract content after the colon
+                    idx = stripped.find(pattern) + len(pattern)
+                    summary_text = stripped[idx:].strip()
+                    if summary_text:
+                        return extract_sentences(markdown_to_plain_text(summary_text))
+                # Also try with regular colon
+                pattern = f"**{heading}**:"
+                if pattern in stripped:
+                    idx = stripped.find(pattern) + len(pattern)
+                    summary_text = stripped[idx:].strip()
+                    if summary_text:
+                        return extract_sentences(markdown_to_plain_text(summary_text))
+
+        # Fallback: look for heading format
+        capture = False
+        bucket: list[str] = []
+        for line in lines[portfolio_section_start:]:
+            stripped = line.strip()
+            heading = stripped.lstrip("#").strip().rstrip(":\uff1a")
+
+            # Check for executive summary heading
+            if any(heading == item for item in SUMMARY_HEADINGS[:4]):  # Chinese headings
+                capture = True
+                continue
+            if any(heading == item for item in SUMMARY_HEADINGS[4:]):  # English headings
+                capture = True
+                continue
+
+            # Stop at next major section (## heading) or next analyst section
+            if capture and stripped.startswith("#"):
+                break
+
+            if capture:
+                bucket.append(line)
+
+        if bucket:
+            excerpt = markdown_to_plain_text("\n".join(bucket)).strip()
+            if excerpt:
+                return extract_sentences(excerpt)
+
+    # Fallback: extract from first available summary section
     capture = False
     bucket: list[str] = []
     for line in lines:
@@ -436,12 +516,26 @@ def summary_counts(items: list[dict[str, Any]]) -> dict[str, int]:
 
 
 def preferred_report_path(item: dict[str, Any]) -> Path | None:
-    for key in ("translated_report_file", "report_file"):
-        value = item.get(key)
-        if value:
-            path = Path(value)
-            if path.exists():
-                return path
+    """Get the preferred report file path.
+
+    Priority:
+    1. report_file (complete_report.md) - now outputs Chinese directly
+    2. translated_report_file (legacy, for backwards compatibility)
+    """
+    # Check report_file first (now outputs Chinese directly)
+    report_file = item.get("report_file")
+    if report_file:
+        path = Path(report_file)
+        if path.exists():
+            return path
+
+    # Fallback to translated_report_file for legacy reports
+    translated_file = item.get("translated_report_file")
+    if translated_file:
+        path = Path(translated_file)
+        if path.exists():
+            return path
+
     return None
 
 
