@@ -19,12 +19,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.market_utils import load_symbol_index, resolve_ticker_input, search_symbol_candidates
 from tradingagents.model_registry import get_model_options, list_provider_options
-from tradingagents.reporting import (
-    build_complete_report_markdown,
-    save_report_to_disk,
-    translate_report_to_chinese,
-    translate_saved_report_to_chinese,
-)
+from tradingagents.reporting import save_report_to_disk
 
 APP_DIR = Path(__file__).resolve().parent
 ASSET_DIR = APP_DIR / "web_assets"
@@ -92,30 +87,14 @@ def _pick_preferred_model(models: List[str], preferred_names: List[str]) -> str:
     return models[0]
 
 
-def _build_translation_selections(payload: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "llm_provider": (payload.get("llm_provider") or DEFAULT_CONFIG["llm_provider"]).lower(),
-        "deep_thinker": payload.get("deep_model") or DEFAULT_CONFIG["deep_think_llm"],
-        "shallow_thinker": payload.get("quick_model") or DEFAULT_CONFIG["quick_think_llm"],
-        "backend_url": payload.get("backend_url") or DEFAULT_CONFIG["backend_url"],
-        "api_key": (payload.get("api_key") or "").strip(),
-    }
-
-
-def _build_fallback_selections() -> Dict[str, Any] | None:
-    """Build fallback provider selections for translation retry."""
-    if not DEFAULT_CONFIG.get("rate_limit_fallback_enabled"):
-        return None
-    return {
-        "llm_provider": DEFAULT_CONFIG.get("rate_limit_fallback_provider"),
-        "deep_thinker": DEFAULT_CONFIG.get("rate_limit_fallback_deep_think_llm"),
-        "shallow_thinker": DEFAULT_CONFIG.get("rate_limit_fallback_quick_think_llm"),
-        "backend_url": DEFAULT_CONFIG.get("rate_limit_fallback_backend_url"),
-    }
-
-
 def _provider_api_key_env(provider: str) -> str | None:
     return PROVIDER_API_KEY_ENV.get((provider or "").lower())
+
+
+def _ollama_model_options() -> Dict[str, List[str]]:
+    installed = get_installed_ollama_models()
+    models = installed or ["glm-4.7-flash:latest", "gpt-oss:latest", "qwen3:latest"]
+    return {"quick": models, "deep": models}
 
 
 @contextmanager
@@ -256,9 +235,52 @@ def _text_excerpt(text: str, limit: int = 220) -> str:
 
 
 def _extract_rating(text: str) -> str:
+    """Extract rating from decision text, supporting both English and Chinese ratings.
+
+    Rating mappings:
+    - Buy/买入/增持 -> Buy
+    - Sell/卖出/减持 -> Sell
+    - Hold/持有/中性 -> Hold
+    - Overweight/超配/高配 -> Overweight
+    - Underweight/低配/低配 -> Underweight
+    """
     # Clean extended thinking tags first to avoid interference
     text = _clean_extended_thinking_tags(text or "")
 
+    # Chinese rating patterns (check first since reports are now in Chinese)
+    chinese_patterns = [
+        # 买入/增持 -> Buy
+        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(买入|增持)\*{0,2}", "Buy"),
+        (r"\*\*评级\*\*[:\s]*\*{0,2}(买入|增持)\*{0,2}", "Buy"),
+        (r"\b(买入|增持)\b", "Buy"),
+
+        # 卖出/减持 -> Sell
+        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(卖出|减持)\*{0,2}", "Sell"),
+        (r"\*\*评级\*\*[:\s]*\*{0,2}(卖出|减持)\*{0,2}", "Sell"),
+        (r"\b(卖出|减持)\b", "Sell"),
+
+        # 持有/中性 -> Hold
+        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(持有|中性)\*{0,2}", "Hold"),
+        (r"\*\*评级\*\*[:\s]*\*{0,2}(持有|中性)\*{0,2}", "Hold"),
+        (r"\b(持有|中性)\b", "Hold"),
+
+        # 超配/高配 -> Overweight
+        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(超配|高配)\*{0,2}", "Overweight"),
+        (r"\*\*评级\*\*[:\s]*\*{0,2}(超配|高配)\*{0,2}", "Overweight"),
+        (r"\b(超配|高配)\b", "Overweight"),
+
+        # 低配 -> Underweight
+        (r"(?:评级|结论|建议|决策|操作建议)[:\s]*\*{0,2}(低配)\*{0,2}", "Underweight"),
+        (r"\*\*评级\*\*[:\s]*\*{0,2}(低配)\*{0,2}", "Underweight"),
+        (r"\b低配\b", "Underweight"),
+    ]
+
+    for pattern, rating in chinese_patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return rating
+
+    # English patterns (for backward compatibility)
     # First try to extract from "FINAL TRANSACTION PROPOSAL:" pattern (most reliable)
     match = re.search(r"FINAL\s+TRANSACTION\s+PROPOSAL:\s*\*{0,2}(Buy|Sell|Hold|Overweight|Underweight)\*{0,2}", text, flags=re.IGNORECASE)
     if match:
@@ -702,7 +724,38 @@ def markdown_to_html(markdown_text: str) -> str:
     return "\n".join(html_parts)
 
 
+def _extract_executive_summary_from_decision(decision_text: str) -> str:
+    """Extract executive summary from portfolio manager decision text.
+
+    Looks for patterns like:
+    - **执行摘要**：xxx
+    - **Executive Summary**: xxx
+    """
+    if not decision_text:
+        return ""
+
+    # Chinese pattern: **执行摘要**：content
+    match = re.search(r"\*\*执行摘要\*\*[:：]\s*(.+?)(?=\n\n|\n\*\*|\n#|\Z)", decision_text, flags=re.DOTALL)
+    if match:
+        summary = match.group(1).strip()
+        # Clean up markdown formatting
+        summary = re.sub(r"\*\*([^*]+)\*\*", r"\1", summary)  # Remove bold markers
+        summary = re.sub(r"\n+", " ", summary)  # Replace newlines with space
+        return summary.strip()
+
+    # English pattern: **Executive Summary**: content
+    match = re.search(r"\*\*Executive\s+Summary\*\*[:：]\s*(.+?)(?=\n\n|\n\*\*|\n#|\Z)", decision_text, flags=re.DOTALL | re.IGNORECASE)
+    if match:
+        summary = match.group(1).strip()
+        summary = re.sub(r"\*\*([^*]+)\*\*", r"\1", summary)
+        summary = re.sub(r"\n+", " ", summary)
+        return summary.strip()
+
+    return ""
+
+
 def load_report_list() -> List[Dict[str, Any]]:
+    """Load list of saved reports. Reports are now generated in Chinese directly."""
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     latest_by_ticker: Dict[str, Dict[str, Any]] = {}
     for folder in sorted(REPORTS_DIR.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True):
@@ -710,39 +763,49 @@ def load_report_list() -> List[Dict[str, Any]]:
             continue
         ticker = _extract_ticker_from_report_id(folder.name)
         decision_text = ""
-        decision_path = folder / "5_portfolio" / "decision.md"
+        # Check both old English path and new Chinese path for decision
+        decision_path = folder / "5_投资组合" / "最终决策.md"
+        if not decision_path.exists():
+            decision_path = folder / "5_portfolio" / "decision.md"
         if decision_path.exists():
             decision_text = decision_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Read the complete report (now in Chinese)
         complete_path = folder / "complete_report.md"
         complete_text = complete_path.read_text(encoding="utf-8", errors="ignore") if complete_path.exists() else ""
-        translated_path = folder / "complete_report_zh.md"
-        translated_text = translated_path.read_text(encoding="utf-8", errors="ignore") if translated_path.exists() else ""
 
         # Clean extended thinking tags from all text content
         decision_text = _clean_extended_thinking_tags(decision_text)
         complete_text = _clean_extended_thinking_tags(complete_text)
-        translated_text = _clean_extended_thinking_tags(translated_text)
 
-        usable_translation = bool(translated_text and not _looks_mojibake(translated_text))
-        preferred_report_text = translated_text if usable_translation else complete_text
-        list_summary = _summarize_report_excerpt(
-            _extract_preferred_summary(translated_text, decision_text, preferred_report_text)
-        )
+        # Extract summary: prefer executive summary from portfolio decision
+        exec_summary = _extract_executive_summary_from_decision(decision_text)
+        if exec_summary:
+            list_summary = _summarize_report_excerpt(exec_summary)
+        else:
+            # Fallback to extracting from complete report
+            list_summary = _summarize_report_excerpt(
+                _preferred_chinese_summary(complete_text) or _extract_report_highlights(complete_text)
+            )
+
+        # Check for Chinese section folders (new format) or English folders (legacy)
+        has_chinese_sections = (folder / "1_分析师").exists() or (folder / "4_风险管理").exists()
+
         report_item = {
             "id": folder.name,
             "ticker": ticker,
             "display_name": _get_display_name(ticker),
             "created_at": _parse_report_timestamp(folder.name, folder.stat().st_mtime),
-            "decision": _extract_rating(decision_text or preferred_report_text),
+            "decision": _extract_rating(decision_text or complete_text),
             "summary": list_summary,
-            "has_translation": usable_translation,
-            "report_language": "zh" if usable_translation else "en",
+            # Reports are now generated in Chinese directly
+            "report_language": "zh",
             "sections": {
-                "analysts": (folder / "1_analysts").exists(),
-                "research": (folder / "2_research").exists(),
-                "trading": (folder / "3_trading").exists(),
-                "risk": (folder / "4_risk").exists(),
-                "portfolio": (folder / "5_portfolio").exists(),
+                "analysts": (folder / "1_分析师").exists() or (folder / "1_analysts").exists(),
+                "research": (folder / "2_研究团队").exists() or (folder / "2_research").exists(),
+                "trading": (folder / "3_交易团队").exists() or (folder / "3_trading").exists(),
+                "risk": (folder / "4_风险管理").exists() or (folder / "4_risk").exists(),
+                "portfolio": (folder / "5_投资组合").exists() or (folder / "5_portfolio").exists(),
             },
             "_sort_mtime": folder.stat().st_mtime,
         }
@@ -757,11 +820,29 @@ def load_report_list() -> List[Dict[str, Any]]:
 
 
 def load_report_detail(report_id: str) -> Dict[str, Any]:
+    """Load detailed report. Reports are now generated in Chinese directly."""
     report_dir = REPORTS_DIR / report_id
     if not report_dir.exists():
         raise FileNotFoundError(report_id)
 
+    # Check for Chinese section folders (new format) first, then English folders (legacy)
     section_specs = [
+        ("market", "市场分析师", report_dir / "1_分析师" / "市场分析.md"),
+        ("sentiment", "社交分析师", report_dir / "1_分析师" / "情绪分析.md"),
+        ("news", "新闻分析师", report_dir / "1_分析师" / "新闻分析.md"),
+        ("fundamentals", "基本面分析师", report_dir / "1_分析师" / "基本面分析.md"),
+        ("bull", "多头研究员", report_dir / "2_研究团队" / "多头观点.md"),
+        ("bear", "空头研究员", report_dir / "2_研究团队" / "空头观点.md"),
+        ("manager", "研究经理", report_dir / "2_研究团队" / "研究经理决策.md"),
+        ("trader", "交易员", report_dir / "3_交易团队" / "交易员计划.md"),
+        ("aggressive", "激进分析师", report_dir / "4_风险管理" / "激进分析师.md"),
+        ("conservative", "保守分析师", report_dir / "4_风险管理" / "保守分析师.md"),
+        ("neutral", "中性分析师", report_dir / "4_风险管理" / "中性分析师.md"),
+        ("portfolio", "投资组合经理", report_dir / "5_投资组合" / "最终决策.md"),
+    ]
+
+    # Legacy English paths for backward compatibility
+    legacy_section_specs = [
         ("market", "Market Analyst", report_dir / "1_analysts" / "market.md"),
         ("sentiment", "Social Analyst", report_dir / "1_analysts" / "sentiment.md"),
         ("news", "News Analyst", report_dir / "1_analysts" / "news.md"),
@@ -778,54 +859,65 @@ def load_report_detail(report_id: str) -> Dict[str, Any]:
 
     sections = []
     for key, title, path_obj in section_specs:
-        if not path_obj.exists():
-            continue
-        content = path_obj.read_text(encoding="utf-8", errors="ignore")
-        sections.append(
-            {
-                "key": key,
-                "title": title,
-                "markdown": content,
-                "html": markdown_to_html(content),
-                "excerpt": _text_excerpt(content),
-            }
-        )
+        if path_obj.exists():
+            content = path_obj.read_text(encoding="utf-8", errors="ignore")
+            sections.append(
+                {
+                    "key": key,
+                    "title": title,
+                    "markdown": content,
+                    "html": markdown_to_html(content),
+                    "excerpt": _text_excerpt(content),
+                }
+            )
 
-    decision_path = report_dir / "5_portfolio" / "decision.md"
-    decision_text = decision_path.read_text(encoding="utf-8", errors="ignore") if decision_path.exists() else ""
+    # If no Chinese sections found, try legacy English paths
+    if not sections:
+        for key, title, path_obj in legacy_section_specs:
+            if path_obj.exists():
+                content = path_obj.read_text(encoding="utf-8", errors="ignore")
+                sections.append(
+                    {
+                        "key": key,
+                        "title": title,
+                        "markdown": content,
+                        "html": markdown_to_html(content),
+                        "excerpt": _text_excerpt(content),
+                    }
+                )
+
+    # Read complete report (now in Chinese)
     complete_path = report_dir / "complete_report.md"
     complete_text = complete_path.read_text(encoding="utf-8", errors="ignore") if complete_path.exists() else ""
-    translated_path = report_dir / "complete_report_zh.md"
-    translated_text = translated_path.read_text(encoding="utf-8", errors="ignore") if translated_path.exists() else ""
 
-    # Clean extended thinking tags from all text content
-    decision_text = _clean_extended_thinking_tags(decision_text)
+    # Clean extended thinking tags
     complete_text = _clean_extended_thinking_tags(complete_text)
-    translated_text = _clean_extended_thinking_tags(translated_text)
 
-    usable_translation = bool(translated_text and not _looks_mojibake(translated_text))
-    preferred_full_text = translated_text if usable_translation else complete_text
-    detail_summary = (
-        _preferred_text_excerpt(
-            _extract_preferred_summary(translated_text, decision_text, preferred_full_text),
-            600,
-        )
-        if usable_translation
-        else "当前记录缺少可用的中文完整报告。"
+    # Extract summary from Chinese report
+    detail_summary = _preferred_text_excerpt(
+        _preferred_chinese_summary(complete_text) or _extract_report_highlights(complete_text),
+        600,
     )
 
     ticker = _extract_ticker_from_report_id(report_id)
+
+    # Get decision from either Chinese or legacy path
+    decision_path = report_dir / "5_投资组合" / "最终决策.md"
+    if not decision_path.exists():
+        decision_path = report_dir / "5_portfolio" / "decision.md"
+    decision_text = decision_path.read_text(encoding="utf-8", errors="ignore") if decision_path.exists() else ""
+    decision_text = _clean_extended_thinking_tags(decision_text)
+
     return {
         "id": report_id,
         "ticker": ticker,
         "display_name": _get_display_name(ticker),
         "created_at": _parse_report_timestamp(report_id, report_dir.stat().st_mtime),
-        "decision": _extract_rating(decision_text or preferred_full_text),
+        "decision": _extract_rating(decision_text or complete_text),
         "executive_summary": detail_summary,
-        "investment_thesis": "当前记录优先展示中文完整报告。" if usable_translation else "当前记录仅提供英文完整报告。",
-        "full_report_html": markdown_to_html(preferred_full_text),
-        "translated_report_html": markdown_to_html(translated_text) if usable_translation else "",
-        "has_translation": usable_translation,
+        "investment_thesis": "报告已直接生成中文版本。",
+        "full_report_html": markdown_to_html(complete_text),
+        "report_language": "zh",
         "sections": sections,
     }
 
@@ -1093,28 +1185,10 @@ class JobManager:
                     raise RuntimeError("Analysis produced no graph output.")
 
                 final_state = trace[-1]
-                translated_report = None
-                translation_warning = None
-                if payload.get("translate_to_chinese", True):
-                    complete_report = build_complete_report_markdown(final_state, ticker)
-                    try:
-                        fallback_selections = _build_fallback_selections()
-                        translated_report = translate_report_to_chinese(
-                            complete_report,
-                            {
-                                "llm_provider": config["llm_provider"],
-                                "deep_thinker": config["deep_think_llm"],
-                                "shallow_thinker": config["quick_think_llm"],
-                                "backend_url": config["backend_url"],
-                            },
-                            fallback_selections=fallback_selections,
-                        )
-                    except Exception as exc:
-                        translation_warning = f"Chinese translation skipped: {exc}"
 
                 report_id = f"{ticker}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 report_path = REPORTS_DIR / report_id
-                save_report_to_disk(final_state, ticker, report_path, translated_report)
+                save_report_to_disk(final_state, ticker, report_path)
 
             decision_text = final_state.get("risk_debate_state", {}).get("judge_decision", "") or final_state.get("final_trade_decision", "")
             self._update(
@@ -1127,7 +1201,6 @@ class JobManager:
                     "ticker": ticker,
                     "decision": _extract_rating(decision_text),
                     "analysis_date": analysis_date,
-                    "warning": translation_warning,
                 },
             )
         except Exception as exc:
@@ -1202,75 +1275,6 @@ class TradingAgentsWebHandler(BaseHTTPRequestHandler):
                 return
             job = JOB_MANAGER.create(payload)
             self._write_json(job, status=HTTPStatus.ACCEPTED)
-            return
-        if parsed.path == "/api/generate-zh-report":
-            payload = self._read_json()
-            report_id = (payload.get("report_id") or "").strip()
-            if not report_id:
-                self._write_json({"error": "Report ID is required."}, status=HTTPStatus.BAD_REQUEST)
-                return
-            report_dir = REPORTS_DIR / report_id
-            if not report_dir.exists():
-                self._write_json({"error": "Report not found."}, status=HTTPStatus.NOT_FOUND)
-                return
-            try:
-                selections = _build_translation_selections(payload)
-                fallback_selections = _build_fallback_selections()
-                with _temporary_provider_api_key(selections["llm_provider"], selections.get("api_key", "")):
-                    output_path = translate_saved_report_to_chinese(
-                        report_dir,
-                        selections,
-                        overwrite=True,
-                        fallback_selections=fallback_selections,
-                    )
-                self._write_json(
-                    {
-                        "ok": True,
-                        "report_id": report_id,
-                        "translated_report_file": str(output_path),
-                    }
-                )
-            except Exception as exc:
-                self._write_json(
-                    {
-                        "error": f"Failed to generate Chinese report: {exc}",
-                        "details": traceback.format_exc(limit=8),
-                    },
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
-            return
-        if parsed.path.startswith("/api/reports/") and parsed.path.endswith("/generate-zh"):
-            report_id = parsed.path.replace("/api/reports/", "", 1).replace("/generate-zh", "").strip("/")
-            report_dir = REPORTS_DIR / report_id
-            if not report_dir.exists():
-                self._write_json({"error": "Report not found."}, status=HTTPStatus.NOT_FOUND)
-                return
-            payload = self._read_json()
-            try:
-                selections = _build_translation_selections(payload)
-                fallback_selections = _build_fallback_selections()
-                with _temporary_provider_api_key(selections["llm_provider"], selections.get("api_key", "")):
-                    output_path = translate_saved_report_to_chinese(
-                        report_dir,
-                        selections,
-                        overwrite=True,
-                        fallback_selections=fallback_selections,
-                    )
-                self._write_json(
-                    {
-                        "ok": True,
-                        "report_id": report_id,
-                        "translated_report_file": str(output_path),
-                    }
-                )
-            except Exception as exc:
-                self._write_json(
-                    {
-                        "error": f"Failed to generate Chinese report: {exc}",
-                        "details": traceback.format_exc(limit=8),
-                    },
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
             return
         self._write_json({"error": "Not found."}, status=HTTPStatus.NOT_FOUND)
 

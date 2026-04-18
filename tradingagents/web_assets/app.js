@@ -36,9 +36,9 @@ const els = {
 
 function decisionClass(value) {
   const norm = (value || "").toLowerCase();
-  if (norm === "buy") return "buy";
+  if (norm === "buy" || norm === "overweight") return "buy";
   if (norm === "hold") return "hold";
-  if (norm === "sell") return "sell";
+  if (norm === "sell" || norm === "underweight") return "sell";
   return "unknown";
 }
 
@@ -48,16 +48,6 @@ function htmlEscape(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
-
-function getTranslationPayload() {
-  return {
-    llm_provider: els.provider.value,
-    backend_url: els.backendUrl.value.trim(),
-    api_key: els.apiKey.value.trim(),
-    quick_model: els.quickModel.value,
-    deep_model: els.deepModel.value,
-  };
 }
 
 async function fetchJson(url, options = {}) {
@@ -128,7 +118,6 @@ function openSymbolModal(rawInput, candidates) {
 function renderHeroMetrics() {
   const running = state.jobs.filter((job) => job.status === "running").length;
   const completed = state.reports.length;
-  const translated = state.reports.filter((item) => item.has_translation).length;
   const buyCount = state.reports.filter((item) => (item.decision || "").toLowerCase() === "buy").length;
   els.heroMetrics.innerHTML = `
     <div class="metric-card">
@@ -138,10 +127,6 @@ function renderHeroMetrics() {
     <div class="metric-card">
       <span class="metric-label">Saved Reports</span>
       <div class="metric-value">${completed}</div>
-    </div>
-    <div class="metric-card">
-      <span class="metric-label">Chinese Versions</span>
-      <div class="metric-value">${translated}</div>
     </div>
     <div class="metric-card">
       <span class="metric-label">Buy Ratings</span>
@@ -278,7 +263,6 @@ function renderReports() {
         <p class="meta-line">${htmlEscape(report.created_at)}</p>
         <p>${htmlEscape(report.summary || "暂无摘要。")}</p>
         <div class="chips">
-          ${report.has_translation ? '<span class="badge subtle">ZH</span>' : '<span class="badge">EN</span>'}
           ${Object.entries(report.sections || {})
             .filter(([, enabled]) => enabled)
             .map(([section]) => `<span class="badge">${htmlEscape(section)}</span>`)
@@ -294,20 +278,13 @@ function renderReports() {
 }
 
 function renderReportDetail(detail) {
-  const hasZh = Boolean(detail.translated_report_html);
-  const reportLanguage = hasZh ? "中文" : "英文";
-  const displayedReport = hasZh ? detail.translated_report_html : detail.full_report_html;
-  const actionBlock = hasZh
-    ? '<span class="badge subtle">ZH</span>'
-    : '<button class="primary-btn" id="generate-zh-report" type="button">补生成中文报告</button>';
-
   els.reportDetail.innerHTML = `
     <div class="detail-header">
       <section class="detail-hero">
         <p class="eyebrow">Final Call</p>
         <h2>${htmlEscape(detail.display_name || detail.ticker)}</h2>
         <p class="micro-copy">${htmlEscape(detail.ticker)}</p>
-        <p>${hasZh ? "当前记录优先展示中文完整报告。" : "当前记录暂无中文版本，右侧先展示英文原报告。"} </p>
+        <p>报告已直接生成中文版本。</p>
       </section>
       <section class="detail-stats">
         <div class="summary-card">
@@ -316,72 +293,19 @@ function renderReportDetail(detail) {
             <span class="decision ${decisionClass(detail.decision)}">${htmlEscape(detail.decision)}</span>
           </div>
           <p class="meta-line">生成时间：${htmlEscape(detail.created_at)}</p>
-          <p>${hasZh ? "英文摘要与英文分段内容已隐藏，避免干扰中文阅读。" : "你也可以使用当前左侧模型配置为这份历史报告补生成中文版本。"}</p>
-        </div>
-        <div class="summary-card">
-          <strong>报告语言</strong>
-          <div class="chips" style="margin-top:10px;">
-            <span class="badge subtle">${reportLanguage}</span>
-          </div>
+          <p>完整报告已按中文输出，可直接阅读。</p>
         </div>
       </section>
     </div>
     <div class="detail-sections">
       <section class="summary-card">
         <div class="card-head">
-          <h3>${hasZh ? "中文完整报告" : "英文完整报告"}</h3>
-          ${actionBlock}
+          <h3>完整报告</h3>
         </div>
-        <div class="report-html">${displayedReport}</div>
+        <div class="report-html">${detail.full_report_html}</div>
       </section>
     </div>
   `;
-
-  const actionButton = document.getElementById("generate-zh-report");
-  if (actionButton) {
-    actionButton.addEventListener("click", () => generateChineseReport(detail.id));
-  }
-}
-
-async function generateChineseReport(reportId) {
-  const button = document.getElementById("generate-zh-report");
-  const payload = getTranslationPayload();
-  if (button) {
-    button.disabled = true;
-    button.textContent = "生成中...";
-  }
-  try {
-    await fetchJson(`/api/reports/${encodeURIComponent(reportId)}/generate-zh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    state.detailCache.delete(reportId);
-    await refreshReports();
-    await openReport(reportId);
-  } catch (error) {
-    try {
-      await fetchJson("/api/generate-zh-report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, report_id: reportId }),
-      });
-      state.detailCache.delete(reportId);
-      await refreshReports();
-      await openReport(reportId);
-      return;
-    } catch (fallbackError) {
-      if (button) {
-        button.disabled = false;
-        button.textContent = "补生成中文报告";
-      }
-      const message = fallbackError.message === "Not found"
-        ? "当前 Web 服务还是旧版本，请先重启 Web 服务后再试。"
-        : fallbackError.message;
-      alert(message);
-      return;
-    }
-  }
 }
 
 async function openReport(reportId) {
@@ -426,7 +350,6 @@ async function handleSubmit(event) {
     deep_model: els.deepModel.value,
     research_depth: Number(els.researchDepth.value),
     analysts,
-    translate_to_chinese: document.getElementById("translate-to-chinese").checked,
   };
 
   if (!payload.ticker) {
