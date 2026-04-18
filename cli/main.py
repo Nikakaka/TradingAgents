@@ -1,7 +1,6 @@
 from typing import Optional
 import datetime
 import sys
-import traceback
 import typer
 from pathlib import Path
 from functools import wraps
@@ -31,7 +30,6 @@ from tradingagents.llm_clients.factory import create_llm_client
 from tradingagents.reporting import (
     build_complete_report_markdown,
     save_report_to_disk,
-    translate_report_to_chinese,
 )
 from tradingagents.web_server import run_server
 from cli.models import AnalystType
@@ -660,7 +658,7 @@ def get_analysis_date():
             )
 
 
-def display_complete_report(final_state, translated_report: Optional[str] = None):
+def display_complete_report(final_state):
     """Display the complete analysis report sequentially (avoids truncation)."""
     console.print()
     console.print(Rule("Complete Analysis Report", style="bold green", characters="-"))
@@ -668,15 +666,15 @@ def display_complete_report(final_state, translated_report: Optional[str] = None
     # I. Analyst Team Reports
     analysts = []
     if final_state.get("market_report"):
-        analysts.append(("Market Analyst", final_state["market_report"]))
+        analysts.append(("市场分析师", final_state["market_report"]))
     if final_state.get("sentiment_report"):
-        analysts.append(("Social Analyst", final_state["sentiment_report"]))
+        analysts.append(("社交分析师", final_state["sentiment_report"]))
     if final_state.get("news_report"):
-        analysts.append(("News Analyst", final_state["news_report"]))
+        analysts.append(("新闻分析师", final_state["news_report"]))
     if final_state.get("fundamentals_report"):
-        analysts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+        analysts.append(("基本面分析师", final_state["fundamentals_report"]))
     if analysts:
-        console.print(Panel("[bold]I. Analyst Team Reports[/bold]", border_style="cyan"))
+        console.print(Panel("[bold]一、分析师团队报告[/bold]", border_style="cyan"))
         for title, content in analysts:
             console.print(Panel(Markdown(terminal_safe(content)), title=title, border_style="blue", padding=(1, 2)))
 
@@ -685,44 +683,40 @@ def display_complete_report(final_state, translated_report: Optional[str] = None
         debate = final_state["investment_debate_state"]
         research = []
         if debate.get("bull_history"):
-            research.append(("Bull Researcher", debate["bull_history"]))
+            research.append(("多头研究员", debate["bull_history"]))
         if debate.get("bear_history"):
-            research.append(("Bear Researcher", debate["bear_history"]))
+            research.append(("空头研究员", debate["bear_history"]))
         if debate.get("judge_decision"):
-            research.append(("Research Manager", debate["judge_decision"]))
+            research.append(("研究经理", debate["judge_decision"]))
         if research:
-            console.print(Panel("[bold]II. Research Team Decision[/bold]", border_style="magenta"))
+            console.print(Panel("[bold]二、研究团队决策[/bold]", border_style="magenta"))
             for title, content in research:
                 console.print(Panel(Markdown(terminal_safe(content)), title=title, border_style="blue", padding=(1, 2)))
 
     # III. Trading Team
     if final_state.get("trader_investment_plan"):
-        console.print(Panel("[bold]III. Trading Team Plan[/bold]", border_style="yellow"))
-        console.print(Panel(Markdown(terminal_safe(final_state["trader_investment_plan"])), title="Trader", border_style="blue", padding=(1, 2)))
+        console.print(Panel("[bold]三、交易团队计划[/bold]", border_style="yellow"))
+        console.print(Panel(Markdown(terminal_safe(final_state["trader_investment_plan"])), title="交易员", border_style="blue", padding=(1, 2)))
 
     # IV. Risk Management Team
     if final_state.get("risk_debate_state"):
         risk = final_state["risk_debate_state"]
         risk_reports = []
         if risk.get("aggressive_history"):
-            risk_reports.append(("Aggressive Analyst", risk["aggressive_history"]))
+            risk_reports.append(("激进分析师", risk["aggressive_history"]))
         if risk.get("conservative_history"):
-            risk_reports.append(("Conservative Analyst", risk["conservative_history"]))
+            risk_reports.append(("保守分析师", risk["conservative_history"]))
         if risk.get("neutral_history"):
-            risk_reports.append(("Neutral Analyst", risk["neutral_history"]))
+            risk_reports.append(("中性分析师", risk["neutral_history"]))
         if risk_reports:
-            console.print(Panel("[bold]IV. Risk Management Team Decision[/bold]", border_style="red"))
+            console.print(Panel("[bold]四、风险管理团队决策[/bold]", border_style="red"))
             for title, content in risk_reports:
                 console.print(Panel(Markdown(terminal_safe(content)), title=title, border_style="blue", padding=(1, 2)))
 
         # V. Portfolio Manager Decision
         if risk.get("judge_decision"):
-            console.print(Panel("[bold]V. Portfolio Manager Decision[/bold]", border_style="green"))
-            console.print(Panel(Markdown(terminal_safe(risk["judge_decision"])), title="Portfolio Manager", border_style="blue", padding=(1, 2)))
-
-    if translated_report:
-        console.print(Panel("[bold]Chinese Translation[/bold]", border_style="green"))
-        console.print(Panel(Markdown(terminal_safe(translated_report)), title="Complete Report (ZH)", border_style="blue", padding=(1, 2)))
+            console.print(Panel("[bold]五、投资组合经理决策[/bold]", border_style="green"))
+            console.print(Panel(Markdown(terminal_safe(risk["judge_decision"])), title="投资组合经理", border_style="blue", padding=(1, 2)))
 
 
 def update_research_team_status(status):
@@ -909,7 +903,6 @@ def run_analysis():
     report_dir.mkdir(parents=True, exist_ok=True)
     log_file = results_dir / "message_tool.log"
     log_file.touch(exist_ok=True)
-    translation_log_file = results_dir / "translation_error.log"
 
     def save_message_decorator(obj, func_name):
         func = getattr(obj, func_name)
@@ -1112,50 +1105,30 @@ def run_analysis():
 
         update_display(layout, stats_handler=stats_handler, start_time=start_time)
 
-    translated_report = None
-    try:
-        complete_report_markdown = build_complete_report_markdown(final_state, selections["ticker"])
-        translated_report = translate_report_to_chinese(complete_report_markdown, selections)
-    except Exception as e:
-        with open(translation_log_file, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.datetime.now().isoformat(timespec='seconds')}] Translation failed\n")
-            f.write(f"Ticker: {selections['ticker']}\n")
-            f.write(f"Provider: {selections.get('llm_provider')}\n")
-            f.write(f"Deep model: {selections.get('deep_thinker')}\n")
-            f.write(f"Quick model: {selections.get('shallow_thinker')}\n")
-            f.write(f"Backend URL: {selections.get('backend_url')}\n")
-            f.write(f"Error: {e}\n")
-            f.write(traceback.format_exc())
-            f.write("\n" + ("-" * 80) + "\n")
-        console.print(f"[yellow]Warning: Could not generate Chinese translation: {e}[/yellow]")
-        console.print(f"[dim]Translation error log:[/dim] {translation_log_file}")
-
     # Post-analysis prompts (outside Live context for clean interaction)
-    console.print("\n[bold cyan]Analysis Complete![/bold cyan]\n")
+    console.print("\n[bold cyan]分析完成！[/bold cyan]\n")
 
     # Prompt to save report
-    save_choice = typer.prompt("Save report?", default="Y").strip().upper()
+    save_choice = typer.prompt("保存报告？", default="Y").strip().upper()
     if save_choice in ("Y", "YES", ""):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_path = Path.cwd() / "reports" / f"{selections['ticker']}_{timestamp}"
         save_path_str = typer.prompt(
-            "Save path (press Enter for default)",
+            "保存路径（按回车使用默认路径）",
             default=str(default_path)
         ).strip()
         save_path = Path(save_path_str)
         try:
-            report_file = save_report_to_disk(final_state, selections["ticker"], save_path, translated_report)
-            console.print(f"\n[green]Report saved to:[/green] {save_path.resolve()}")
-            console.print(f"  [dim]Complete report:[/dim] {report_file.name}")
-            if translated_report:
-                console.print("  [dim]Chinese report:[/dim] complete_report_zh.md")
+            report_file = save_report_to_disk(final_state, selections["ticker"], save_path)
+            console.print(f"\n[green]报告已保存至：[/green] {save_path.resolve()}")
+            console.print(f"  [dim]完整报告：[/dim] {report_file.name}")
         except Exception as e:
-            console.print(f"[red]Error saving report: {e}[/red]")
+            console.print(f"[red]保存报告时出错：{e}[/red]")
 
     # Prompt to display full report
-    display_choice = typer.prompt("\nDisplay full report on screen?", default="Y").strip().upper()
+    display_choice = typer.prompt("\n在屏幕上显示完整报告？", default="Y").strip().upper()
     if display_choice in ("Y", "YES", ""):
-        display_complete_report(final_state, translated_report)
+        display_complete_report(final_state)
 
 
 @app.command()

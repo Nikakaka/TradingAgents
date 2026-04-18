@@ -1,7 +1,6 @@
 import argparse
 import json
 import sys
-import traceback
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -12,7 +11,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from dotenv import load_dotenv
 
-from cli.main import build_complete_report_markdown, save_report_to_disk, translate_report_to_chinese
+from cli.main import save_report_to_disk
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 
@@ -60,11 +59,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--result-json",
         default=None,
         help="Optional file path where the final JSON result will also be written.",
-    )
-    parser.add_argument(
-        "--skip-translation",
-        action="store_true",
-        help="Skip generating complete_report_zh.md.",
     )
     parser.add_argument(
         "--dry-run",
@@ -234,24 +228,6 @@ def write_result_json(result_json: str | None, payload: dict[str, Any]) -> None:
     result_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def write_translation_error_log(output_dir: Path, args: argparse.Namespace, exc: Exception, fallback_info: str = None) -> Path:
-    log_path = output_dir / "translation_error.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as handle:
-        handle.write(f"[{datetime.now().isoformat(timespec='seconds')}] Translation failed\n")
-        handle.write(f"Ticker: {args.ticker}\n")
-        handle.write(f"Provider: {args.provider}\n")
-        handle.write(f"Quick model: {args.quick_model}\n")
-        handle.write(f"Deep model: {args.deep_model}\n")
-        handle.write(f"Backend URL: {args.backend_url}\n")
-        if fallback_info:
-            handle.write(f"Fallback attempted: {fallback_info}\n")
-        handle.write(f"Error: {exc}\n")
-        handle.write(traceback.format_exc())
-        handle.write("\n")
-    return log_path
-
-
 def main() -> int:
     load_dotenv()
     args = apply_config_file(parse_args())
@@ -287,7 +263,6 @@ def main() -> int:
         "deep_model": config["deep_think_llm"],
         "backend_url": config["backend_url"],
         "output_dir": str(output_dir.resolve()),
-        "skip_translation": args.skip_translation,
         "config_file": str(Path(args.config_file).resolve()) if args.config_file else None,
         "position_info": position_info,
     }
@@ -305,50 +280,11 @@ def main() -> int:
     )
     final_state, decision = graph.propagate(args.ticker, args.analysis_date)
 
-    translated_report = None
-    complete_report = build_complete_report_markdown(final_state, args.ticker)
-    if not args.skip_translation:
-        try:
-            # Build fallback config for translation if rate limit fallback is enabled
-            fallback_selections = None
-            if config.get("rate_limit_fallback_enabled"):
-                fallback_selections = {
-                    "llm_provider": config.get("rate_limit_fallback_provider"),
-                    "deep_thinker": config.get("rate_limit_fallback_deep_think_llm"),
-                    "shallow_thinker": config.get("rate_limit_fallback_quick_think_llm"),
-                    "backend_url": config.get("rate_limit_fallback_backend_url"),
-                }
-
-            translated_report = translate_report_to_chinese(
-                complete_report,
-                {
-                    "llm_provider": config["llm_provider"],
-                    "deep_thinker": config["deep_think_llm"],
-                    "shallow_thinker": config["quick_think_llm"],
-                    "backend_url": config["backend_url"],
-                },
-                fallback_selections=fallback_selections,
-            )
-        except Exception as exc:
-            log_path = write_translation_error_log(output_dir, args, exc)
-            print(
-                json.dumps(
-                    {
-                        "warning": "translation_failed",
-                        "ticker": args.ticker,
-                        "translation_error_log": str(log_path.resolve()),
-                        "error": str(exc),
-                    },
-                    ensure_ascii=False,
-                ),
-                file=sys.stderr,
-            )
-
+    # 直接保存中文报告，无需翻译
     report_file = save_report_to_disk(
         final_state,
         args.ticker,
         output_dir,
-        translated_report=translated_report,
     )
 
     result = {
@@ -356,10 +292,6 @@ def main() -> int:
         **summary,
         "decision": decision,
         "report_file": str(report_file.resolve()),
-        "translated_report_file": str((output_dir / "complete_report_zh.md").resolve()) if translated_report else None,
-        "translation_error_log": str((output_dir / "translation_error.log").resolve())
-        if (output_dir / "translation_error.log").exists()
-        else None,
     }
     write_result_json(args.result_json, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))

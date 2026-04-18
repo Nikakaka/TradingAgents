@@ -59,44 +59,46 @@ def create_portfolio_manager(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
+        prompt = f"""作为投资组合经理，综合风险分析师的辩论并给出最终交易决策。
 
 {instrument_context}
 
 ---
 
-**Rating Scale** (use exactly one):
-- **Buy**: Strong conviction to enter or add to position
-- **Overweight**: Favorable outlook, gradually increase exposure
-- **Hold**: Maintain current position, no action needed
-- **Underweight**: Reduce exposure, take partial profits
-- **Sell**: Exit position or avoid entry
+**评级标准**（仅使用其中一个）：
+- **买入**：有强烈信心建仓或加仓
+- **超配**：前景看好，逐步增加敞口
+- **持有**：维持当前仓位，无需行动
+- **低配**：减少敞口，部分获利了结
+- **卖出**：清仓或避免入场
 
-**Context:**
-- Trader's proposed plan: **{trader_plan}**
-- Lessons from past decisions: **{past_memory_str}**
+**背景：**
+- 交易员建议方案：**{trader_plan}**
+- 过往决策经验：**{past_memory_str}**
 
-**Required Output Structure (STRICTLY follow this format):**
+**必需的输出格式（严格按此格式）：**
 
-**Rating**: [One of: Buy / Overweight / Hold / Underweight / Sell]
+**评级**：[选择：买入 / 超配 / 持有 / 低配 / 卖出]
 
-**Executive Summary**: [2-3 sentences on entry strategy, position sizing, key risk levels, and time horizon]
+**执行摘要**：[2-3句话说明入场策略、仓位大小、关键风险位和时间期限]
 
-**Investment Thesis**: [Detailed reasoning anchored in the analysts' debate]
+**投资逻辑**：[基于分析师辩论的详细论证]
 
 ---
 
-**Risk Analysts Debate History:**
+**风险分析师辩论历史：**
 {history}
 
 ---
 
-**IMPORTANT**: Start your response with the Rating line. Do not add introductory text before the Rating.
+**重要提示**：以评级行开头。不要在评级前添加任何开场白。
 
-Example output:
-**Rating**: Hold
-**Executive Summary**: Maintain current position with tight stop-loss at key support. Wait for technical confirmation before adding exposure.
-**Investment Thesis**: The fundamental growth story remains intact, but near-term technical weakness and insider selling warrant caution..."""
+示例输出：
+**评级**：持有
+**执行摘要**：维持当前仓位，在关键支撑位设置紧止损。等待技术确认后再增加敞口。
+**投资逻辑**：基本面增长逻辑依然成立，但近期技术弱势和内部人卖出值得警惕...
+请使用中文撰写回复。
+"""
 
         response = llm.invoke(prompt)
 

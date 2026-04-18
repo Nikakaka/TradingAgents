@@ -18,17 +18,6 @@ from .akshare_fundamentals import (
     get_income_statement as get_akshare_income_statement,
 )
 from .akshare_news import get_news_akshare, get_global_news_akshare
-from .alpha_vantage import (
-    get_stock as get_alpha_vantage_stock,
-    get_indicator as get_alpha_vantage_indicator,
-    get_fundamentals as get_alpha_vantage_fundamentals,
-    get_balance_sheet as get_alpha_vantage_balance_sheet,
-    get_cashflow as get_alpha_vantage_cashflow,
-    get_income_statement as get_alpha_vantage_income_statement,
-    get_insider_transactions as get_alpha_vantage_insider_transactions,
-    get_news as get_alpha_vantage_news,
-    get_global_news as get_alpha_vantage_global_news,
-)
 from .akshare_hk import (
     get_stock_data as get_akshare_hk_stock,
     get_indicator as get_akshare_hk_indicator,
@@ -45,7 +34,6 @@ from .efinance_cn import (
     get_stock_data as get_efinance_cn_stock,
     get_indicator as get_efinance_cn_indicator,
 )
-from .alpha_vantage_common import AlphaVantageRateLimitError
 from yfinance.exceptions import YFRateLimitError
 
 # Configuration and routing logic
@@ -54,19 +42,19 @@ from .config import get_config
 # Tools organized by category
 TOOLS_CATEGORIES = {
     "core_stock_apis": {
-        "description": "OHLCV stock price data",
+        "description": "股票行情数据（开高低收成交量）",
         "tools": [
             "get_stock_data"
         ]
     },
     "technical_indicators": {
-        "description": "Technical analysis indicators",
+        "description": "技术分析指标",
         "tools": [
             "get_indicators"
         ]
     },
     "fundamental_data": {
-        "description": "Company fundamentals",
+        "description": "公司基本面数据",
         "tools": [
             "get_fundamentals",
             "get_balance_sheet",
@@ -75,7 +63,7 @@ TOOLS_CATEGORIES = {
         ]
     },
     "news_data": {
-        "description": "News and insider data",
+        "description": "新闻和内部人交易数据",
         "tools": [
             "get_news",
             "get_global_news",
@@ -85,64 +73,54 @@ TOOLS_CATEGORIES = {
 }
 
 VENDOR_LIST = [
-    "efinance",  # EastMoney - best for China A-shares (stable, free)
-    "akshare",
-    "yfinance",
-    "alpha_vantage",
-    "sina",
+    "efinance",  # EastMoney - A股数据（稳定、免费）
+    "sina",      # 新浪财经 - 港股实时行情（无速率限制）
+    "akshare",   # AKShare - A股/港股数据（全面、免费）
+    "yfinance",  # Yahoo Finance - 通用数据（有速率限制）
 ]
 
 # Mapping of methods to their vendor-specific implementations
 VENDOR_METHODS = {
     # core_stock_apis
     "get_stock_data": {
-        "efinance": get_efinance_cn_stock,  # A-shares via EastMoney (stable)
-        "sina": get_sina_hk_stock,  # HK real-time data (no rate limit)
+        "efinance": get_efinance_cn_stock,  # A股 via EastMoney（稳定）
+        "sina": get_sina_hk_stock,  # 港股实时数据（无速率限制）
         "akshare": [get_akshare_hk_stock, get_akshare_cn_stock],
-        "alpha_vantage": get_alpha_vantage_stock,
         "yfinance": get_YFin_data_online,
     },
     # technical_indicators
     "get_indicators": {
-        "efinance": get_efinance_cn_indicator,  # A-shares via EastMoney
+        "efinance": get_efinance_cn_indicator,  # A股 via EastMoney
         "akshare": [get_akshare_hk_indicator, get_akshare_cn_indicator],
-        "alpha_vantage": get_alpha_vantage_indicator,
         "yfinance": get_stock_stats_indicators_window,
     },
     # fundamental_data
     "get_fundamentals": {
         "akshare": get_akshare_fundamentals,
-        "alpha_vantage": get_alpha_vantage_fundamentals,
         "yfinance": get_yfinance_fundamentals,
     },
     "get_balance_sheet": {
         "akshare": get_akshare_balance_sheet,
-        "alpha_vantage": get_alpha_vantage_balance_sheet,
         "yfinance": get_yfinance_balance_sheet,
     },
     "get_cashflow": {
         "akshare": get_akshare_cashflow,
-        "alpha_vantage": get_alpha_vantage_cashflow,
         "yfinance": get_yfinance_cashflow,
     },
     "get_income_statement": {
         "akshare": get_akshare_income_statement,
-        "alpha_vantage": get_alpha_vantage_income_statement,
         "yfinance": get_yfinance_income_statement,
     },
     # news_data
     "get_news": {
-        "akshare": get_news_akshare,  # Chinese A-share news (EastMoney)
-        "alpha_vantage": get_alpha_vantage_news,
+        "akshare": get_news_akshare,  # 中文A股新闻（东方财富）
         "yfinance": get_news_yfinance,
     },
     "get_global_news": {
-        "akshare": get_global_news_akshare,  # Chinese market news (EastMoney)
+        "akshare": get_global_news_akshare,  # 中文财经新闻（东方财富）
         "yfinance": get_global_news_yfinance,
-        "alpha_vantage": get_alpha_vantage_global_news,
     },
     "get_insider_transactions": {
-        "alpha_vantage": get_alpha_vantage_insider_transactions,
         "yfinance": get_yfinance_insider_transactions,
     },
 }
@@ -197,29 +175,22 @@ def route_to_vendor(method: str, *args, **kwargs):
         for impl_func in impl_funcs:
             try:
                 return impl_func(*args, **kwargs)
-            except AlphaVantageRateLimitError as exc:
-                attempted_errors.append(f"{vendor}:{impl_func.__name__} rate-limited ({exc})")
-                continue
             except YFRateLimitError as exc:
-                attempted_errors.append(f"{vendor}:{impl_func.__name__} rate-limited ({exc})")
+                attempted_errors.append(f"{vendor}:{impl_func.__name__} 速率限制 ({exc})")
                 continue
             except ValueError as exc:
-                # Alpha Vantage is optional; skip it when the API key is not configured.
-                if vendor == "alpha_vantage" and "ALPHA_VANTAGE_API_KEY" in str(exc):
-                    attempted_errors.append(f"{vendor}:{impl_func.__name__} unavailable ({exc})")
-                    continue
                 if vendor == "akshare" and symbol:
-                    attempted_errors.append(f"{vendor}:{impl_func.__name__} unsupported for symbol {symbol} ({exc})")
+                    attempted_errors.append(f"{vendor}:{impl_func.__name__} 不支持股票 {symbol} ({exc})")
                     continue
-                attempted_errors.append(f"{vendor}:{impl_func.__name__} failed ({exc})")
+                attempted_errors.append(f"{vendor}:{impl_func.__name__} 失败 ({exc})")
                 raise
             except Exception as exc:
-                attempted_errors.append(f"{vendor}:{impl_func.__name__} failed ({exc})")
+                attempted_errors.append(f"{vendor}:{impl_func.__name__} 失败 ({exc})")
                 continue
 
     reason = "; ".join(attempted_errors) if attempted_errors else "no vendor implementation could handle the request"
     return (
-        f"Data retrieval unavailable for '{method}'. "
-        f"Ticker: {symbol or 'unknown'}. "
-        f"Attempts: {reason}"
+        f"数据获取失败：'{method}'。"
+        f"股票代码：{symbol or '未知'}。"
+        f"尝试记录：{reason}"
     )

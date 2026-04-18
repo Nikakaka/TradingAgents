@@ -37,12 +37,12 @@ def _clean_pseudo_tool_calls(text: str) -> str:
 
 
 def _fallback_argument(trader_decision: str) -> str:
-    summary = _sanitize_report(trader_decision, max_chars=900) or "Research summary requires manual review."
+    summary = _sanitize_report(trader_decision, max_chars=900) or "研究摘要需要人工审查。"
     return (
-        "Conservative Analyst: Recommendation review from a capital-protection perspective.\n"
-        "- Focus on downside containment and avoid oversized conviction.\n"
-        f"- Current plan summary: {summary}\n"
-        "- Prefer smaller sizing or waiting for stronger confirmation before increasing exposure."
+        "保守分析师：从资本保护视角审查建议。\n"
+        "- 专注于下行控制，避免过度确信。\n"
+        f"- 当前计划摘要：{summary}\n"
+        "- 倾向于更小的仓位或在增加敞口前等待更强的确认。"
     )
 
 
@@ -61,41 +61,42 @@ def create_conservative_debator(llm):
         fundamentals_report = state["fundamentals_report"]
         trader_decision = state["trader_investment_plan"]
 
-        prompt = f"""You are the capital-protection risk reviewer.
+        prompt = f"""你是资本保护型风险评审员。
 
-Provide a short note from a conservative perspective. Focus on:
-- downside risks that could break the trade,
-- balance-sheet or macro risks that deserve caution,
-- practical controls such as smaller size, tighter risk limits, or waiting for confirmation.
+请从保守视角撰写一份简短说明。重点关注：
+- 可能破坏交易的下行风险，
+- 值得警惕的资产负债表或宏观风险，
+- 实用的控制措施，如更小的仓位、更严格的风险限制或等待确认。
 
-Keep the tone factual and professional. Do not argue with other analysts.
+保持语气事实性和专业性。不要与其他分析师争论。
 
-Trader decision:
+交易员决策：
 {_sanitize_report(trader_decision, max_chars=1400)}
 
-Market research:
+市场研究：
 {_sanitize_report(market_research_report, max_chars=1000)}
 
-Sentiment:
+情绪：
 {_sanitize_report(sentiment_report, max_chars=800)}
 
-News:
+新闻：
 {_sanitize_report(news_report, max_chars=800)}
 
-Fundamentals:
+基本面：
 {_sanitize_report(fundamentals_report, max_chars=800)}
 
-Prior discussion:
+先前讨论：
 {_sanitize_report(history, max_chars=900)}
 
-Other views:
-- Growth-focused view: {_sanitize_report(current_aggressive_response, max_chars=500)}
-- Balanced view: {_sanitize_report(current_neutral_response, max_chars=500)}
+其他观点：
+- 成长型观点：{_sanitize_report(current_aggressive_response, max_chars=500)}
+- 平衡观点：{_sanitize_report(current_neutral_response, max_chars=500)}
+请使用中文撰写回复。
 """
 
         try:
             response = llm.invoke(prompt)
-            argument = f"Conservative Analyst: {_clean_pseudo_tool_calls(response.content)}"
+            argument = f"保守分析师：{_clean_pseudo_tool_calls(response.content)}"
         except Exception as exc:
             error_text = str(exc)
             if "1301" not in error_text and "contentFilter" not in error_text:

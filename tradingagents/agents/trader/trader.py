@@ -76,12 +76,12 @@ def _build_primary_messages(
     context = {
         "role": "user",
         "content": (
-            f"Provide a practical trading recommendation for {company_name}. "
+            f"请为 {company_name} 提供一个实用的交易建议。"
             f"{instrument_context}\n\n"
-            f"Decision note from the research lead:\n{investment_plan}\n\n"
-            "Return a concise recommendation with rationale and a clear final line in the form "
-            "'FINAL RECOMMENDATION: BUY', 'FINAL RECOMMENDATION: HOLD', or "
-            "'FINAL RECOMMENDATION: SELL'."
+            f"研究主管的决策说明：\n{investment_plan}\n\n"
+            "返回一份简洁的建议，包含理由和清晰的最后一行，格式为"
+            "'最终建议：买入'、'最终建议：持有' 或 '最终建议：卖出'。"
+            "请使用中文撰写。"
         ),
     }
 
@@ -89,10 +89,10 @@ def _build_primary_messages(
         {
             "role": "system",
             "content": (
-                "You are a trading agent making a practical investment decision from prior analyst work. "
-                "Keep the tone calm, factual, and action-oriented. Recommend Buy, Hold, or Sell. "
-                "Use the past lessons only as brief context.\n\n"
-                f"Past lessons:\n{past_memories or '- No past lessons available.'}"
+                "你是一名交易员，根据之前的分析师工作做出实际的投资决策。"
+                "保持语气冷静、事实性、以行动为导向。建议买入、持有或卖出。"
+                "仅将过去的经验教训作为简短背景。\n\n"
+                f"过去的经验教训：\n{past_memories or '- 无可用经验教训。'}"
             ),
         },
         context,
@@ -102,32 +102,33 @@ def _build_primary_messages(
 
 def _build_fallback_prompt(company_name: str, instrument_context: str, investment_plan: str) -> str:
     return (
-        f"Provide a short trading recommendation for {company_name}.\n\n"
-        "Return exactly:\n"
-        "Recommendation: Buy, Hold, or Sell\n"
-        "Reasons:\n"
-        "- point 1\n"
-        "- point 2\n"
-        "Next step:\n"
-        "- point 1\n"
-        "Final line:\n"
-        "FINAL RECOMMENDATION: BUY/HOLD/SELL\n\n"
-        "Keep it neutral and concise.\n\n"
+        f"请为 {company_name} 提供一个简短的交易建议。\n\n"
+        "严格按以下格式返回：\n"
+        "建议：买入、持有或卖出\n"
+        "理由：\n"
+        "- 要点 1\n"
+        "- 要点 2\n"
+        "下一步行动：\n"
+        "- 要点 1\n"
+        "最后一行：\n"
+        "最终建议：买入/持有/卖出\n\n"
+        "保持中立简洁。\n\n"
         f"{instrument_context}\n\n"
-        f"Decision note:\n{investment_plan}"
+        f"决策说明：\n{investment_plan}"
+        "请使用中文撰写。"
     )
 
 
 def _build_deterministic_fallback(instrument_context: str, investment_plan: str) -> AIMessage:
-    summary = _sanitize_for_provider(investment_plan, max_chars=900) or "The research summary needs manual review."
+    summary = _sanitize_for_provider(investment_plan, max_chars=900) or "研究摘要需要人工审查。"
     content = (
-        "Recommendation: Hold\n"
-        "Reasons:\n"
-        "- The provider safety filter blocked automated trading synthesis.\n"
-        f"- Research summary: {summary}\n"
-        "Next step:\n"
-        "- Review the research summary manually before placing a directional trade.\n"
-        "FINAL RECOMMENDATION: HOLD"
+        "建议：持有\n"
+        "理由：\n"
+        "- 提供商安全过滤器阻止了自动交易综合。\n"
+        f"- 研究摘要：{summary}\n"
+        "下一步行动：\n"
+        "- 在进行方向性交易前人工审查研究摘要。\n"
+        "最终建议：持有"
     )
     return AIMessage(content=f"{instrument_context}\n\n{content}".strip())
 

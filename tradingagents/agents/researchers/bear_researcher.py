@@ -28,31 +28,32 @@ def create_bear_researcher(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""You are the Risk Analyst for this investment review. Present a concise, evidence-based risk case for the stock, focusing on downside drivers, execution challenges, and weak market signals.
+        prompt = f"""你是本次投资评审的空头分析师。请基于证据构建简洁的看空观点，聚焦下行驱动因素、执行挑战和疲弱的市场信号。
 
-Key points to focus on:
+重点关注：
 
-- Risks and Challenges: Highlight factors like market saturation, financial instability, or macroeconomic threats that could hinder the stock's performance.
-- Competitive Weaknesses: Emphasize vulnerabilities such as weaker market positioning, declining innovation, or threats from competitors.
-- Negative Indicators: Use evidence from financial data, market trends, or recent adverse news to support your position.
-- Supportive Counterpoints: Critically analyze the supportive view with specific data and sound reasoning, exposing weak assumptions or over-optimistic interpretations.
-- Output Style: Keep the response practical, neutral in tone, and easy for another analyst to summarize.
+- 风险和挑战：强调市场饱和、财务不稳定或宏观经济威胁等可能阻碍股票表现的因素。
+- 竞争劣势：强调市场地位较弱、创新能力下降或来自竞争对手的威胁等弱点。
+- 负面指标：使用财务数据、市场趋势或最近的负面新闻作为证据来支持你的立场。
+- 多头反驳：用具体数据和合理推理批判性地分析看多观点，揭示薄弱假设或过度乐观的解读。
+- 输出风格：保持回复实用、语气中立，便于其他分析师总结。
 
-Resources available:
+可用资源：
 
-Market research report: {_sanitize_report(market_research_report)}
-Social media sentiment report: {_sanitize_report(sentiment_report)}
-Latest world affairs news: {_sanitize_report(news_report)}
-Company fundamentals report: {_sanitize_report(fundamentals_report)}
-Conversation history of the discussion: {_sanitize_report(history, max_chars=1500)}
-Last supportive view: {_sanitize_report(current_response, max_chars=1200)}
-Reflections from similar situations and lessons learned: {past_memory_str}
-Use this information to deliver a strong risk view, address the constructive case, and incorporate useful lessons from similar past situations.
+市场研究报告：{_sanitize_report(market_research_report)}
+社交媒体情绪报告：{_sanitize_report(sentiment_report)}
+最新全球新闻：{_sanitize_report(news_report)}
+公司基本面报告：{_sanitize_report(fundamentals_report)}
+讨论历史：{_sanitize_report(history, max_chars=1500)}
+最后的多头观点：{_sanitize_report(current_response, max_chars=1200)}
+类似情况的反思和经验教训：{past_memory_str}
+请使用这些信息提供有力的空头观点，回应看多观点，并融入类似过去情况的有用经验。
+请使用中文撰写回复。
 """
 
         response = llm.invoke(prompt)
 
-        argument = f"Risk View: {response.content}"
+        argument = f"空头观点：{response.content}"
 
         new_investment_debate_state = {
             "history": history + "\n" + argument,

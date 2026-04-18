@@ -248,6 +248,14 @@ class OpenAIClient(BaseLLMClient):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
 
+        # Set default timeout if not specified (prevents hanging on API calls)
+        if "timeout" not in llm_kwargs:
+            llm_kwargs["timeout"] = self.kwargs.get("timeout", 300)  # 5 minutes default
+
+        # Set default max_retries if not specified
+        if "max_retries" not in llm_kwargs:
+            llm_kwargs["max_retries"] = self.kwargs.get("max_retries", 2)
+
         if self.provider == "openai":
             llm_kwargs["use_responses_api"] = True
 

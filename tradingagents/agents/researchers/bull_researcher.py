@@ -28,29 +28,30 @@ def create_bull_researcher(llm, memory):
         for i, rec in enumerate(past_memories, 1):
             past_memory_str += rec["recommendation"] + "\n\n"
 
-        prompt = f"""You are the Supportive Analyst for this investment review. Build a concise, evidence-based case for the more constructive interpretation of the stock, focusing on growth potential, competitive strengths, and favorable market signals.
+        prompt = f"""你是本次投资评审的多头分析师。请基于证据构建简洁的看多观点，聚焦增长潜力、竞争优势和有利的市场信号。
 
-Key points to focus on:
-- Growth Potential: Highlight the company's market opportunities, revenue projections, and scalability.
-- Competitive Advantages: Emphasize factors like unique products, strong branding, or dominant market positioning.
-- Positive Indicators: Use financial health, industry trends, and recent positive news as evidence.
-- Risk Counterpoints: Critically analyze the risk view with specific data and sound reasoning, addressing concerns thoroughly and showing why the constructive perspective has merit.
-- Output Style: Keep the response practical, neutral in tone, and easy for another analyst to summarize.
+重点关注：
+- 增长潜力：强调公司的市场机会、收入预期和可扩展性。
+- 竞争优势：强调独特产品、强大品牌或主导市场地位等因素。
+- 积极指标：使用财务健康状况、行业趋势和最近的正面新闻作为证据。
+- 风险反驳：用具体数据和合理推理批判性地分析看空观点，彻底回应担忧，说明为什么看多观点有其合理性。
+- 输出风格：保持回复实用、语气中立，便于其他分析师总结。
 
-Resources available:
-Market research report: {_sanitize_report(market_research_report)}
-Social media sentiment report: {_sanitize_report(sentiment_report)}
-Latest world affairs news: {_sanitize_report(news_report)}
-Company fundamentals report: {_sanitize_report(fundamentals_report)}
-Conversation history of the discussion: {_sanitize_report(history, max_chars=1500)}
-Last risk view: {_sanitize_report(current_response, max_chars=1200)}
-Reflections from similar situations and lessons learned: {past_memory_str}
-Use this information to deliver a strong supportive view, address the main risks, and incorporate useful lessons from similar past situations.
+可用资源：
+市场研究报告：{_sanitize_report(market_research_report)}
+社交媒体情绪报告：{_sanitize_report(sentiment_report)}
+最新全球新闻：{_sanitize_report(news_report)}
+公司基本面报告：{_sanitize_report(fundamentals_report)}
+讨论历史：{_sanitize_report(history, max_chars=1500)}
+最后的空头观点：{_sanitize_report(current_response, max_chars=1200)}
+类似情况的反思和经验教训：{past_memory_str}
+请使用这些信息提供有力的多头观点，回应主要风险，并融入类似过去情况的有用经验。
+请使用中文撰写回复。
 """
 
         response = llm.invoke(prompt)
 
-        argument = f"Supportive View: {response.content}"
+        argument = f"多头观点：{response.content}"
 
         new_investment_debate_state = {
             "history": history + "\n" + argument,

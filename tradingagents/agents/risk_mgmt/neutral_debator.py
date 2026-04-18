@@ -37,12 +37,12 @@ def _clean_pseudo_tool_calls(text: str) -> str:
 
 
 def _fallback_argument(trader_decision: str) -> str:
-    summary = _sanitize_report(trader_decision, max_chars=900) or "Research summary requires manual review."
+    summary = _sanitize_report(trader_decision, max_chars=900) or "研究摘要需要人工审查。"
     return (
-        "Neutral Analyst: Recommendation review from a balanced perspective.\n"
-        "- Weigh upside and downside before changing exposure materially.\n"
-        f"- Current plan summary: {summary}\n"
-        "- Prefer staged execution and confirmation from price action or fundamentals."
+        "中性分析师：从平衡视角审查建议。\n"
+        "- 在实质性改变敞口前权衡上行和下行。\n"
+        f"- 当前计划摘要：{summary}\n"
+        "- 倾向于分批执行并等待价格走势或基本面确认。"
     )
 
 
@@ -61,41 +61,42 @@ def create_neutral_debator(llm):
         fundamentals_report = state["fundamentals_report"]
         trader_decision = state["trader_investment_plan"]
 
-        prompt = f"""You are the balanced risk reviewer.
+        prompt = f"""你是平衡型风险评审员。
 
-Provide a short note from a neutral perspective. Focus on:
-- where the constructive case is credible,
-- where the downside case is still meaningful,
-- a practical middle-ground execution plan.
+请从中性视角撰写一份简短说明。重点关注：
+- 看多观点在哪些方面可信，
+- 看空观点在哪些方面仍有意义，
+- 一个实用的折中执行方案。
 
-Keep the tone factual and professional. Do not argue with other analysts.
+保持语气事实性和专业性。不要与其他分析师争论。
 
-Trader decision:
+交易员决策：
 {_sanitize_report(trader_decision, max_chars=1400)}
 
-Market research:
+市场研究：
 {_sanitize_report(market_research_report, max_chars=1000)}
 
-Sentiment:
+情绪：
 {_sanitize_report(sentiment_report, max_chars=800)}
 
-News:
+新闻：
 {_sanitize_report(news_report, max_chars=800)}
 
-Fundamentals:
+基本面：
 {_sanitize_report(fundamentals_report, max_chars=800)}
 
-Prior discussion:
+先前讨论：
 {_sanitize_report(history, max_chars=900)}
 
-Other views:
-- Growth-focused view: {_sanitize_report(current_aggressive_response, max_chars=500)}
-- Risk-control view: {_sanitize_report(current_conservative_response, max_chars=500)}
+其他观点：
+- 成长型观点：{_sanitize_report(current_aggressive_response, max_chars=500)}
+- 风险控制观点：{_sanitize_report(current_conservative_response, max_chars=500)}
+请使用中文撰写回复。
 """
 
         try:
             response = llm.invoke(prompt)
-            argument = f"Neutral Analyst: {_clean_pseudo_tool_calls(response.content)}"
+            argument = f"中性分析师：{_clean_pseudo_tool_calls(response.content)}"
         except Exception as exc:
             error_text = str(exc)
             if "1301" not in error_text and "contentFilter" not in error_text:

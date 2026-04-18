@@ -54,13 +54,18 @@ class ConditionalLogic:
             state["investment_debate_state"].get("current_response", "") or ""
         ).strip()
         normalized = current_response.lower()
+        # 中文关键词优先（修改后的输出格式）
         supportive_markers = (
+            "多头观点",
+            "看多",
             "bull",
             "supportive",
             "positive case",
             "view a",
         )
         risk_markers = (
+            "空头观点",
+            "看空",
             "bear",
             "risk",
             "negative case",

@@ -34,26 +34,31 @@ DEFAULT_CONFIG = {
     "ollama_num_ctx": 8192,
     "ollama_num_predict": 900,
     "ollama_temperature": 0.2,
+    # OpenAI-compatible API timeout (for JD, OpenAI, xAI, etc.)
+    "openai_timeout": 300,  # 5 minutes per request
+    "openai_max_retries": 2,
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 800,  # Increased for depth=3 analysis with multiple stocks and complex debates
-    # Data vendor configuration
+    # Data vendor configuration - optimized for China A-shares and Hong Kong stocks
     # Category-level configuration (default for all tools in category)
     # efinance: EastMoney (best for China A-shares, stable and free)
     # sina: Free, no rate limit, HK real-time quotes
-    # yfinance: Broader coverage but rate limited
-    # akshare: A-share data via baostock (free, but can be unstable)
-    # alpha_vantage: US stocks only, requires API key
+    # akshare: A-share/HK data (free, comprehensive)
     "data_vendors": {
-        "core_stock_apis": "efinance,sina,akshare,yfinance,alpha_vantage",
-        "technical_indicators": "efinance,akshare,yfinance,alpha_vantage",
-        "fundamental_data": "akshare,yfinance,alpha_vantage",
-        "news_data": "akshare,yfinance,alpha_vantage",  # akshare first for Chinese A-shares
+        # 核心行情数据：efinance(A股) > sina(港股) > akshare > yfinance
+        "core_stock_apis": "efinance,sina,akshare,yfinance",
+        # 技术指标：efinance(A股) > akshare > yfinance
+        "technical_indicators": "efinance,akshare,yfinance",
+        # 基本面数据：akshare(最全面) > yfinance
+        "fundamental_data": "akshare,yfinance",
+        # 新闻数据：akshare(东方财富中文新闻) > yfinance
+        "news_data": "akshare,yfinance",
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {
-        # Use sina for HK stocks (no rate limit)
+        # 港股行情优先使用 sina（无速率限制）
         # "get_stock_data": "sina",  # Override for HK stocks
     },
 }

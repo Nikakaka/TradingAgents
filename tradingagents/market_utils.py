@@ -89,28 +89,28 @@ def get_market_info(ticker: str) -> MarketInfo:
     canonical = normalize_ticker_symbol(ticker)
 
     market = "global"
-    region_label = "global market"
+    region_label = "全球市场"
     yfinance_symbol = canonical
     akshare_symbol = None
 
     if canonical.endswith(".HK"):
         market = "hk"
-        region_label = "Hong Kong equity"
+        region_label = "港股"
         yfinance_symbol = canonical
         akshare_symbol = canonical[:-3].zfill(5)
     elif canonical.endswith(".SH"):
         market = "cn_a"
-        region_label = "China A-share (Shanghai)"
+        region_label = "A股（上海）"
         yfinance_symbol = f"{canonical[:-3]}.SS"
         akshare_symbol = canonical[:-3]
     elif canonical.endswith(".SZ"):
         market = "cn_a"
-        region_label = "China A-share (Shenzhen)"
+        region_label = "A股（深圳）"
         yfinance_symbol = canonical
         akshare_symbol = canonical[:-3]
     elif canonical.endswith(".BJ"):
         market = "cn_a"
-        region_label = "China A-share (Beijing)"
+        region_label = "A股（北交所）"
         yfinance_symbol = canonical
         akshare_symbol = canonical[:-3]
 
@@ -127,10 +127,10 @@ def build_instrument_context_text(ticker: str) -> str:
     """Describe the instrument so prompts preserve the intended listing."""
     info = get_market_info(ticker)
     return (
-        f"The instrument to analyze is `{info.canonical_ticker}` ({info.region_label}). "
-        "Use this exact ticker in every tool call, report, and recommendation, "
-        "preserving any exchange suffix (e.g. `.HK`, `.SH`, `.SZ`, `.BJ`, `.TO`, `.L`, `.T`). "
-        "If the instrument is a China or Hong Kong listing, do not silently replace it with a U.S. ADR or a different exchange listing."
+        f"待分析的股票为 `{info.canonical_ticker}`（{info.region_label}）。"
+        f"在每次工具调用、报告和建议中使用这个确切的股票代码，"
+        f"保留交易所后缀（如 `.HK`、`.SH`、`.SZ`、`.BJ`）。"
+        f"如果是A股或港股，请勿擅自替换为其他市场的股票代码。"
     )
 
 

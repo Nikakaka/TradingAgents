@@ -29,21 +29,36 @@ def normalize_indicator_name(indicator: str) -> str:
 
 @tool
 def get_indicators(
-    symbol: Annotated[str, "ticker symbol of the company"],
-    indicator: Annotated[str, "technical indicator to get the analysis and report of"],
-    curr_date: Annotated[str, "The current trading date you are trading on, YYYY-mm-dd"],
-    look_back_days: Annotated[int, "how many days to look back"] = 30,
+    symbol: Annotated[str, "股票代码"],
+    indicator: Annotated[str, "技术指标名称"],
+    curr_date: Annotated[str, "当前交易日期，格式：yyyy-mm-dd"],
+    look_back_days: Annotated[int, "回看天数"] = 30,
 ) -> str:
     """
-    Retrieve a single technical indicator for a given ticker symbol.
-    Uses the configured technical_indicators vendor.
-    Args:
-        symbol (str): Ticker symbol of the company, e.g. AAPL, TSM
-        indicator (str): A single technical indicator name, e.g. 'rsi', 'macd'. Call this tool once per indicator.
-        curr_date (str): The current trading date you are trading on, YYYY-mm-dd
-        look_back_days (int): How many days to look back, default is 30
-    Returns:
-        str: A formatted dataframe containing the technical indicators for the specified ticker symbol and indicator.
+    获取股票的单一技术指标数据。
+    适用于A股和港股的技术分析。
+    参数：
+        symbol (str): 股票代码，如 600519.SH、0700.HK
+        indicator (str): 单个技术指标名称，如 'rsi'、'macd'、'boll'。每次调用只查询一个指标。
+        curr_date (str): 当前交易日期，格式：yyyy-mm-dd
+        look_back_days (int): 回看天数，默认30天
+    返回：
+        str: 包含指定技术指标数据的格式化报告
+
+    支持的技术指标列表：
+    - close_50_sma: 50日简单移动平均线
+    - close_200_sma: 200日简单移动平均线
+    - close_10_ema: 10日指数移动平均线
+    - macd: MACD指标
+    - macds: MACD信号线
+    - macdh: MACD柱状图
+    - rsi: 相对强弱指数
+    - boll: 布林带中轨
+    - boll_ub: 布林带上轨
+    - boll_lb: 布林带下轨
+    - atr: 平均真实波幅
+    - vwma: 成交量加权移动平均线
+    - mfi: 资金流量指标
     """
     # LLMs sometimes pass multiple indicators as a comma-separated string;
     # split and process each individually.

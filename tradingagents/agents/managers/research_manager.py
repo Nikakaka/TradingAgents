@@ -83,52 +83,74 @@ Notes:
 def _build_deterministic_fallback(instrument_context: str, history: str) -> AIMessage:
     history_summary = _summarize_history_for_provider(history, max_points=4, max_chars=900)
     content = (
-        "Recommendation: Hold\n"
-        "Reasons:\n"
-        "- The provider safety filter blocked automated synthesis of the analyst discussion.\n"
-        f"{history_summary or '- The available notes need manual review before a directional trade.'}\n"
-        "Next step:\n"
-        "- Review the analyst reports manually and rerun with a more neutral prompt if needed.\n"
+        "建议：持有\n"
+        "理由：\n"
+        "- 提供商安全过滤器阻止了分析师讨论的自动综合。\n"
+        f"{history_summary or '- 可用备注需要在方向性交易前进行人工审查。'}\n"
+        "下一步行动：\n"
+        "- 人工审查分析师报告，如有需要请使用更中立的提示重新运行。\n"
     )
     return AIMessage(content=f"{instrument_context}\n\n{content}".strip())
 
 
 def _build_primary_prompt(instrument_context: str, past_memory_str: str, history: str) -> str:
-    return f"""You are the research lead responsible for combining two contrasting investment viewpoints into one practical decision for the trader.
+    return f"""你是研究主管，负责将两个对立的投资观点综合为一个给交易员的实用决策。
 
-Review View A and View B, then decide which side is better supported by the evidence. Choose Buy, Sell, or Hold. Use Hold only when the available evidence is genuinely mixed or insufficient.
+审视观点 A 和观点 B，然后判断哪一方有更好的证据支持。选择买入、卖出或持有。仅当可用证据真正混合或不足时才使用持有。
 
-Write a clear decision note with:
-1. Recommendation: Buy, Sell, or Hold.
-2. Key supporting evidence from both viewpoints.
-3. Rationale for the final decision.
-4. Practical next steps for the trader.
+撰写一份清晰的决策说明，包括：
+1. 建议：买入、卖出或持有。
+2. 来自双方观点的关键支持证据。
+3. 最终决策的理由。
+4. 给交易员的实用下一步行动。
 
-Use lessons from similar past situations to improve the decision, but keep the tone professional, calm, and focused on financial analysis.
+利用类似过去情况的经验教训来改进决策，但保持语气专业、冷静，聚焦财务分析。
 
-Past reflections:
+过去的反思：
 "{past_memory_str}"
 
 {instrument_context}
 
-Discussion history:
-{history}"""
+讨论历史：
+{history}
+请使用中文撰写回复。"""
 
 
 def _build_fallback_prompt(instrument_context: str, history: str) -> str:
-    return f"""Review the following investment discussion and provide a calm financial summary.
+    return f"""审视以下投资讨论并提供一份冷静的财务总结。
 
-Return:
-1. Recommendation: Buy, Sell, or Hold.
-2. Two or three key reasons.
-3. Practical next step for the trader.
+返回：
+1. 建议：买入、卖出或持有。
+2. 两到三个关键理由。
+3. 给交易员的实用下一步行动。
 
-Keep the response concise and professional.
+保持回复简洁专业。
 
 {instrument_context}
 
-Discussion:
-{history}"""
+讨论：
+{history}
+请使用中文撰写回复。"""
+
+
+def _build_ultra_safe_prompt(instrument_context: str, history_summary: str) -> str:
+    return f"""为以下标的提供一份简短、中性的交易说明。
+
+严格按以下格式返回：
+建议：买入、卖出或持有
+理由：
+- 要点 1
+- 要点 2
+下一步行动：
+- 要点 1
+
+保持语气冷静和事实性。避免辩论语言。
+
+{instrument_context}
+
+备注：
+{history_summary or '- 可用的分析师备注有限。'}
+请使用中文撰写回复。"""
 
 
 def create_research_manager(llm, memory):

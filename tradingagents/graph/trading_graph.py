@@ -182,6 +182,14 @@ class TradingAgentsGraph:
             kwargs["num_predict"] = self.config.get("ollama_num_predict", 900)
             kwargs["temperature"] = self.config.get("ollama_temperature", 0.2)
 
+        # Set timeout for OpenAI-compatible providers (JD, xAI, OpenRouter, etc.)
+        # This prevents hanging when API is slow or unresponsive
+        if provider_lower in ("openai", "jd", "xai", "openrouter", "zhipu"):
+            if "timeout" not in kwargs:
+                kwargs["timeout"] = self.config.get("openai_timeout", 300)
+            if "max_retries" not in kwargs:
+                kwargs["max_retries"] = self.config.get("openai_max_retries", 2)
+
         return kwargs
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:

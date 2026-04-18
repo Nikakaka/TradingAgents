@@ -132,34 +132,34 @@ def build_complete_report_markdown(final_state, ticker: str) -> str:
 
     analyst_parts = []
     if final_state.get("market_report"):
-        analyst_parts.append(("Market Analyst", final_state["market_report"]))
+        analyst_parts.append(("市场分析师", final_state["market_report"]))
     if final_state.get("sentiment_report"):
-        analyst_parts.append(("Social Analyst", final_state["sentiment_report"]))
+        analyst_parts.append(("社交分析师", final_state["sentiment_report"]))
     if final_state.get("news_report"):
-        analyst_parts.append(("News Analyst", final_state["news_report"]))
+        analyst_parts.append(("新闻分析师", final_state["news_report"]))
     if final_state.get("fundamentals_report"):
-        analyst_parts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+        analyst_parts.append(("基本面分析师", final_state["fundamentals_report"]))
     if analyst_parts:
         content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
-        sections.append(f"## I. Analyst Team Reports\n\n{content}")
+        sections.append(f"## 一、分析师团队报告\n\n{content}")
 
     if final_state.get("investment_debate_state"):
         debate = final_state["investment_debate_state"]
         research_parts = []
         if debate.get("bull_history"):
-            research_parts.append(("Bull Researcher", debate["bull_history"]))
+            research_parts.append(("多头研究员", debate["bull_history"]))
         if debate.get("bear_history"):
-            research_parts.append(("Bear Researcher", debate["bear_history"]))
+            research_parts.append(("空头研究员", debate["bear_history"]))
         if debate.get("judge_decision"):
-            research_parts.append(("Research Manager", debate["judge_decision"]))
+            research_parts.append(("研究经理", debate["judge_decision"]))
         if research_parts:
             content = "\n\n".join(f"### {name}\n{text}" for name, text in research_parts)
-            sections.append(f"## II. Research Team Decision\n\n{content}")
+            sections.append(f"## 二、研究团队决策\n\n{content}")
 
     if final_state.get("trader_investment_plan"):
         # Clean pseudo tool calls from trader output
         trader_plan = _clean_pseudo_tool_calls(final_state['trader_investment_plan'])
-        sections.append(f"## III. Trading Team Plan\n\n### Trader\n{trader_plan}")
+        sections.append(f"## 三、交易团队计划\n\n### 交易员\n{trader_plan}")
 
     if final_state.get("risk_debate_state"):
         risk = final_state["risk_debate_state"]
@@ -167,22 +167,22 @@ def build_complete_report_markdown(final_state, ticker: str) -> str:
         if risk.get("aggressive_history"):
             # Clean pseudo tool calls from risk analyst outputs
             aggressive_text = _clean_pseudo_tool_calls(risk["aggressive_history"])
-            risk_parts.append(("Aggressive Analyst", aggressive_text))
+            risk_parts.append(("激进分析师", aggressive_text))
         if risk.get("conservative_history"):
             conservative_text = _clean_pseudo_tool_calls(risk["conservative_history"])
-            risk_parts.append(("Conservative Analyst", conservative_text))
+            risk_parts.append(("保守分析师", conservative_text))
         if risk.get("neutral_history"):
             neutral_text = _clean_pseudo_tool_calls(risk["neutral_history"])
-            risk_parts.append(("Neutral Analyst", neutral_text))
+            risk_parts.append(("中性分析师", neutral_text))
         if risk_parts:
             content = "\n\n".join(f"### {name}\n{text}" for name, text in risk_parts)
-            sections.append(f"## IV. Risk Management Team Decision\n\n{content}")
+            sections.append(f"## 四、风险管理团队决策\n\n{content}")
 
         if risk.get("judge_decision"):
             judge_decision = _clean_pseudo_tool_calls(risk['judge_decision'])
-            sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{judge_decision}")
+            sections.append(f"## 五、投资组合经理决策\n\n### 投资组合经理\n{judge_decision}")
 
-    header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    header = f"# 交易分析报告：{ticker}\n\n生成时间：{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     return header + "\n\n".join(sections)
 
 
@@ -470,59 +470,58 @@ def save_report_to_disk(final_state, ticker: str, save_path: Path, translated_re
     """Save complete analysis report to disk with organized subfolders."""
     save_path.mkdir(parents=True, exist_ok=True)
 
-    analysts_dir = save_path / "1_analysts"
+    analysts_dir = save_path / "1_分析师"
     if final_state.get("market_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "market.md").write_text(final_state["market_report"], encoding="utf-8")
+        (analysts_dir / "市场分析.md").write_text(final_state["market_report"], encoding="utf-8")
     if final_state.get("sentiment_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"], encoding="utf-8")
+        (analysts_dir / "情绪分析.md").write_text(final_state["sentiment_report"], encoding="utf-8")
     if final_state.get("news_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "news.md").write_text(final_state["news_report"], encoding="utf-8")
+        (analysts_dir / "新闻分析.md").write_text(final_state["news_report"], encoding="utf-8")
     if final_state.get("fundamentals_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"], encoding="utf-8")
+        (analysts_dir / "基本面分析.md").write_text(final_state["fundamentals_report"], encoding="utf-8")
 
     if final_state.get("investment_debate_state"):
-        research_dir = save_path / "2_research"
+        research_dir = save_path / "2_研究团队"
         debate = final_state["investment_debate_state"]
         if debate.get("bull_history"):
             research_dir.mkdir(exist_ok=True)
-            (research_dir / "bull.md").write_text(debate["bull_history"], encoding="utf-8")
+            (research_dir / "多头观点.md").write_text(debate["bull_history"], encoding="utf-8")
         if debate.get("bear_history"):
             research_dir.mkdir(exist_ok=True)
-            (research_dir / "bear.md").write_text(debate["bear_history"], encoding="utf-8")
+            (research_dir / "空头观点.md").write_text(debate["bear_history"], encoding="utf-8")
         if debate.get("judge_decision"):
             research_dir.mkdir(exist_ok=True)
-            (research_dir / "manager.md").write_text(debate["judge_decision"], encoding="utf-8")
+            (research_dir / "研究经理决策.md").write_text(debate["judge_decision"], encoding="utf-8")
 
     if final_state.get("trader_investment_plan"):
-        trading_dir = save_path / "3_trading"
+        trading_dir = save_path / "3_交易团队"
         trading_dir.mkdir(exist_ok=True)
-        (trading_dir / "trader.md").write_text(final_state["trader_investment_plan"], encoding="utf-8")
+        (trading_dir / "交易员计划.md").write_text(final_state["trader_investment_plan"], encoding="utf-8")
 
     if final_state.get("risk_debate_state"):
-        risk_dir = save_path / "4_risk"
+        risk_dir = save_path / "4_风险管理"
         risk = final_state["risk_debate_state"]
         if risk.get("aggressive_history"):
             risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "aggressive.md").write_text(risk["aggressive_history"], encoding="utf-8")
+            (risk_dir / "激进分析师.md").write_text(risk["aggressive_history"], encoding="utf-8")
         if risk.get("conservative_history"):
             risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "conservative.md").write_text(risk["conservative_history"], encoding="utf-8")
+            (risk_dir / "保守分析师.md").write_text(risk["conservative_history"], encoding="utf-8")
         if risk.get("neutral_history"):
             risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "neutral.md").write_text(risk["neutral_history"], encoding="utf-8")
+            (risk_dir / "中性分析师.md").write_text(risk["neutral_history"], encoding="utf-8")
         if risk.get("judge_decision"):
-            portfolio_dir = save_path / "5_portfolio"
+            portfolio_dir = save_path / "5_投资组合"
             portfolio_dir.mkdir(exist_ok=True)
-            (portfolio_dir / "decision.md").write_text(risk["judge_decision"], encoding="utf-8")
+            (portfolio_dir / "最终决策.md").write_text(risk["judge_decision"], encoding="utf-8")
 
     report_file = save_path / "complete_report.md"
     report_file.write_text(build_complete_report_markdown(final_state, ticker), encoding="utf-8")
-    if translated_report:
-        (save_path / "complete_report_zh.md").write_text(translated_report, encoding="utf-8")
+    # 不再生成翻译版本，直接输出中文报告
     return report_file
 
 

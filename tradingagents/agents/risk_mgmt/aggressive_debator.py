@@ -46,12 +46,12 @@ def _clean_pseudo_tool_calls(text: str) -> str:
 
 
 def _fallback_argument(trader_decision: str) -> str:
-    summary = _sanitize_report(trader_decision, max_chars=900) or "Research summary requires manual review."
+    summary = _sanitize_report(trader_decision, max_chars=900) or "研究摘要需要人工审查。"
     return (
-        "Aggressive Analyst: Recommendation review from a growth-focused perspective.\n"
-        "- Maintain exposure only if upside catalysts remain credible.\n"
-        f"- Current plan summary: {summary}\n"
-        "- Use position sizing and stop-loss controls to manage higher-volatility scenarios."
+        "激进分析师：从成长型视角审查建议。\n"
+        "- 仅在上行催化剂仍然可信时保持敞口。\n"
+        f"- 当前计划摘要：{summary}\n"
+        "- 使用仓位控制和止损来管理高波动情形。"
     )
 
 
@@ -70,41 +70,42 @@ def create_aggressive_debator(llm):
         fundamentals_report = state["fundamentals_report"]
         trader_decision = state["trader_investment_plan"]
 
-        prompt = f"""You are the growth-focused risk reviewer.
+        prompt = f"""你是成长型风险评审员。
 
-Provide a short note from a higher-conviction perspective. Focus on:
-- upside catalysts that could justify staying constructive,
-- the main conditions required for the trade to work,
-- practical guardrails such as entry discipline, sizing, or stops.
+请从高确定性视角撰写一份简短说明。重点关注：
+- 可能支持看涨立场的上行催化剂，
+- 交易成功所需的主要条件，
+- 实用的风险控制措施，如入场纪律、仓位控制或止损。
 
-Keep the tone factual and professional. Do not argue with other analysts.
+保持语气事实性和专业性。不要与其他分析师争论。
 
-Trader decision:
+交易员决策：
 {_sanitize_report(trader_decision, max_chars=1400)}
 
-Market research:
+市场研究：
 {_sanitize_report(market_research_report, max_chars=1000)}
 
-Sentiment:
+情绪：
 {_sanitize_report(sentiment_report, max_chars=800)}
 
-News:
+新闻：
 {_sanitize_report(news_report, max_chars=800)}
 
-Fundamentals:
+基本面：
 {_sanitize_report(fundamentals_report, max_chars=800)}
 
-Prior discussion:
+先前讨论：
 {_sanitize_report(history, max_chars=900)}
 
-Other views:
-- Risk-control view: {_sanitize_report(current_conservative_response, max_chars=500)}
-- Balanced view: {_sanitize_report(current_neutral_response, max_chars=500)}
+其他观点：
+- 风险控制观点：{_sanitize_report(current_conservative_response, max_chars=500)}
+- 平衡观点：{_sanitize_report(current_neutral_response, max_chars=500)}
+请使用中文撰写回复。
 """
 
         try:
             response = llm.invoke(prompt)
-            argument = f"Aggressive Analyst: {_clean_pseudo_tool_calls(response.content)}"
+            argument = f"激进分析师：{_clean_pseudo_tool_calls(response.content)}"
         except Exception as exc:
             error_text = str(exc)
             if "1301" not in error_text and "contentFilter" not in error_text:
