@@ -106,8 +106,10 @@ VENDOR_METHODS = {
         "yfinance": get_YFin_data_online,
     },
     # technical_indicators
+    # Note: ifind does not have a technical indicators function, only financial indicators
+    # Financial indicators (get_financial_indicators_ifind) have different signature
+    # (ticker, date) vs (symbol, indicator, curr_date, look_back_days)
     "get_indicators": {
-        "ifind": get_financial_indicators_ifind,
         "efinance": get_efinance_cn_indicator,  # A股 via EastMoney
         "akshare": [get_akshare_hk_indicator, get_akshare_cn_indicator],
         "yfinance": get_stock_stats_indicators_window,

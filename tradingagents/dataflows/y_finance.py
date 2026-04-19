@@ -1,8 +1,27 @@
 from typing import Annotated
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import yfinance as yf
 import os
+import urllib.request
+
+# Configure proxy for yfinance (international data source)
+# yfinance needs proxy to access Yahoo Finance from China
+def _configure_proxy():
+    """Configure proxy for international data sources like Yahoo Finance."""
+    # Check if local VPN proxy is available (port 7897 is common for Clash/V2Ray)
+    proxy_host = os.environ.get("YFINANCE_PROXY") or os.environ.get("HTTP_PROXY") or "http://127.0.0.1:7897"
+
+    # Set proxy for requests library
+    os.environ['HTTP_PROXY'] = proxy_host
+    os.environ['HTTPS_PROXY'] = proxy_host
+
+    # Enable requests to use environment proxy
+    import requests
+    requests.Session.trust_env = True
+
+_configure_proxy()
+
+import yfinance as yf
 import pandas as pd
 from .stockstats_utils import StockstatsUtils, _clean_dataframe, yf_retry
 from tradingagents.market_utils import get_market_info

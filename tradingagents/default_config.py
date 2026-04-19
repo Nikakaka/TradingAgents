@@ -49,8 +49,9 @@ DEFAULT_CONFIG = {
     "data_vendors": {
         # 核心行情数据：ifind(付费) > efinance(A股) > sina(港股) > akshare > yfinance
         "core_stock_apis": "ifind,efinance,sina,akshare,yfinance",
-        # 技术指标：ifind(付费) > efinance(A股) > akshare > yfinance
-        "technical_indicators": "ifind,efinance,akshare,yfinance",
+        # 技术指标：efinance(A股) > akshare > yfinance
+        # Note: ifind does not support technical indicators, only financial indicators
+        "technical_indicators": "efinance,akshare,yfinance",
         # 基本面数据：ifind(付费) > akshare(最全面) > yfinance
         "fundamental_data": "ifind,akshare,yfinance",
         # 新闻数据：akshare(东方财富中文新闻) > yfinance

@@ -15,10 +15,28 @@
 from __future__ import annotations
 
 import os
+import urllib.request
 import json
 import time
 from datetime import datetime, timedelta
 from typing import Any, Optional
+
+# Disable system proxy for iFinD (China domestic data source)
+def _disable_system_proxy():
+    """Disable system proxy settings for domestic data sources."""
+    for key in list(os.environ.keys()):
+        if 'proxy' in key.lower() and key.upper() not in ['NO_PROXY']:
+            del os.environ[key]
+    no_proxy_handler = urllib.request.ProxyHandler({})
+    opener = urllib.request.build_opener(no_proxy_handler)
+    urllib.request.install_opener(opener)
+    os.environ['NO_PROXY'] = '*'
+    os.environ['no_proxy'] = '*'
+    import requests
+    requests.Session.trust_env = False
+
+_disable_system_proxy()
+
 import requests
 import pandas as pd
 

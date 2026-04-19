@@ -1,5 +1,24 @@
 import os
+import urllib.request
 from datetime import datetime
+
+# Disable system proxy by default for akshare HK data
+# This fixes connection issues when Windows proxy settings point to a non-working proxy
+def _disable_system_proxy():
+    """Disable system proxy settings that may interfere with data fetching."""
+    for key in list(os.environ.keys()):
+        if 'proxy' in key.lower() and key.upper() not in ['NO_PROXY']:
+            del os.environ[key]
+    no_proxy_handler = urllib.request.ProxyHandler({})
+    opener = urllib.request.build_opener(no_proxy_handler)
+    urllib.request.install_opener(opener)
+    os.environ['NO_PROXY'] = '*'
+    os.environ['no_proxy'] = '*'
+    # Also disable requests library from reading system proxy settings
+    import requests
+    requests.Session.trust_env = False
+
+_disable_system_proxy()
 
 import httpx
 import pandas as pd
@@ -7,23 +26,8 @@ from stockstats import wrap
 
 from tradingagents.market_utils import get_market_info
 
-
-# Proxy configuration for HK data
-# Set to None to disable proxy (useful when proxy is not working)
-_PROXY_URL = os.environ.get("AKSHARE_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY")
-
-# Check if proxy is working, if not disable it
-if _PROXY_URL and _PROXY_URL.startswith("http://127.0.0.1"):
-    # Local proxy may not be stable, try without proxy
-    try:
-        import urllib.request
-        urllib.request.urlopen("https://www.baidu.com", timeout=5)
-        # Direct connection works, no need for proxy
-        _PROXY_URL = None
-        os.environ.pop("HTTP_PROXY", None)
-        os.environ.pop("HTTPS_PROXY", None)
-    except:
-        pass  # Keep proxy if direct connection fails
+# Proxy URL is now disabled by default
+_PROXY_URL = None
 
 
 _HK_RENAME_MAP = {

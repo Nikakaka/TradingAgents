@@ -25,6 +25,10 @@ from typing import Annotated
 import httpx
 import pandas as pd
 
+# Also disable requests library from reading system proxy settings
+import requests
+requests.Session.trust_env = False
+
 from tradingagents.market_utils import get_market_info
 
 # Try to import akshare for HK historical data

@@ -1,6 +1,20 @@
 import os
 import time
 import logging
+import urllib.request
+
+# Configure proxy for Alpha Vantage (international data source)
+# Alpha Vantage needs proxy to access from China
+def _configure_proxy():
+    """Configure proxy for international data sources."""
+    proxy_host = os.environ.get("ALPHA_VANTAGE_PROXY") or os.environ.get("HTTP_PROXY") or "http://127.0.0.1:7897"
+    os.environ['HTTP_PROXY'] = proxy_host
+    os.environ['HTTPS_PROXY'] = proxy_host
+    import requests
+    requests.Session.trust_env = True
+
+_configure_proxy()
+
 import requests
 import pandas as pd
 import json

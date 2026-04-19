@@ -23,6 +23,10 @@ def _disable_system_proxy():
     os.environ['NO_PROXY'] = '*'
     os.environ['no_proxy'] = '*'
 
+    # Disable requests library from reading system proxy settings
+    import requests
+    requests.Session.trust_env = False
+
 
 # Disable proxy on module load
 _disable_system_proxy()

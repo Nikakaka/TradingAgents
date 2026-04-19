@@ -26,6 +26,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Annotated
 
+# Also disable requests library from reading system proxy settings
+import requests
+requests.Session.trust_env = False
+
 from tradingagents.market_utils import get_market_info
 
 # Common headers to avoid being blocked

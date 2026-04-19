@@ -1,8 +1,27 @@
 """Akshare-based news data fetching functions for Chinese A-shares."""
 
+import os
+import urllib.request
 import logging
 import time
 from datetime import datetime
+
+# Disable system proxy for akshare data fetching
+def _disable_system_proxy():
+    """Disable system proxy settings that may interfere with data fetching."""
+    for key in list(os.environ.keys()):
+        if 'proxy' in key.lower() and key.upper() not in ['NO_PROXY']:
+            del os.environ[key]
+    no_proxy_handler = urllib.request.ProxyHandler({})
+    opener = urllib.request.build_opener(no_proxy_handler)
+    urllib.request.install_opener(opener)
+    os.environ['NO_PROXY'] = '*'
+    os.environ['no_proxy'] = '*'
+    # Also disable requests library from reading system proxy settings
+    import requests
+    requests.Session.trust_env = False
+
+_disable_system_proxy()
 
 import akshare as ak
 
