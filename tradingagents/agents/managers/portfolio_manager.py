@@ -26,10 +26,10 @@ def _clean_pseudo_tool_calls(text: str) -> str:
     text = re.sub(pattern4, '', text)
 
     # Pattern 5: Remove thinking blocks (used by DeepSeek, GLM reasoning models)
-    text = re.sub(r'<think>[\s\S]*?</think>', '', text)
-    text = re.sub(r'<think>[\s\S]*$', '', text)
+    text = re.sub(r'<tool_call>[\s\S]*?TrimSpace', '', text)
+    text = re.sub(r'<tool_call>[\s\S]*$', '', text)
     # Handle orphaned close tags
-    text = text.replace('</think>', '')
+    text = text.replace('TrimSpace', '')
 
     # Pattern 6: Extended thinking tags (Claude format)
     # These tags contain the LLM's internal reasoning that should not appear in reports
@@ -45,6 +45,72 @@ def _clean_pseudo_tool_calls(text: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
+
+
+def _calculate_sentiment_score(signal: str, confidence: float, risk_factors: dict = None) -> int:
+    """Calculate sentiment score (0-100) based on signal, confidence and risk factors.
+
+    Scoring bands:
+    - 80-100: Strong buy (all conditions met, high conviction)
+    - 60-79: Buy (mostly positive, minor caveats)
+    - 40-59: Hold (mixed signals, or risk present)
+    - 20-39: Sell (negative trend + risk)
+    - 0-19: Strong sell (major risk + bearish)
+
+    Args:
+        signal: Trading signal (buy/hold/sell)
+        confidence: Confidence level (0-1)
+        risk_factors: Optional dict with risk information
+
+    Returns:
+        Integer score between 0-100
+    """
+    # Base score ranges by signal
+    base_ranges = {
+        "buy": (60, 95),
+        "hold": (40, 60),
+        "sell": (5, 40),
+    }
+
+    low, high = base_ranges.get(signal, (40, 60))
+
+    # Calculate base score within range based on confidence
+    base_score = low + (high - low) * confidence
+
+    # Adjust for risk factors
+    risk_penalty = 0
+    if risk_factors:
+        # High severity risk
+        if risk_factors.get("high_severity_count", 0) > 0:
+            risk_penalty += 25 * risk_factors["high_severity_count"]
+        # Medium severity risk
+        if risk_factors.get("medium_severity_count", 0) > 0:
+            risk_penalty += 10 * risk_factors["medium_severity_count"]
+        # Cash flow issues
+        if risk_factors.get("cashflow_issue", False):
+            risk_penalty += 15
+        # Inventory risk
+        if risk_factors.get("inventory_risk", False):
+            risk_penalty += 10
+
+    final_score = base_score - risk_penalty
+
+    # Clamp to 0-100
+    return max(0, min(100, int(final_score)))
+
+
+def _get_score_label(score: int) -> str:
+    """Get a descriptive label for the sentiment score."""
+    if score >= 80:
+        return "强烈看好"
+    elif score >= 60:
+        return "偏多"
+    elif score >= 40:
+        return "中性"
+    elif score >= 20:
+        return "偏空"
+    else:
+        return "强烈看空"
 
 
 def _extract_signal_and_confidence(content: str) -> tuple:
@@ -89,7 +155,6 @@ def _extract_signal_and_confidence(content: str) -> tuple:
     confidence = 0.5
 
     # Look for explicit confidence mentions
-    import re
     conf_match = re.search(r'置信度[：:]\s*(\d+(?:\.\d+)?)\s*%', content)
     if conf_match:
         confidence = float(conf_match.group(1)) / 100
@@ -107,6 +172,40 @@ def _extract_signal_and_confidence(content: str) -> tuple:
             confidence = 0.4
 
     return signal, min(1.0, max(0.1, confidence))
+
+
+def _extract_risk_factors(history: str) -> dict:
+    """Extract risk factors from debate history for score adjustment."""
+    risk_factors = {
+        "high_severity_count": 0,
+        "medium_severity_count": 0,
+        "cashflow_issue": False,
+        "inventory_risk": False,
+    }
+
+    if not history:
+        return risk_factors
+
+    history_lower = history.lower()
+
+    # Count severity mentions
+    high_keywords = ["高风险", "重大风险", "严重", "critical", "重大隐患"]
+    medium_keywords = ["中等风险", "需关注", "风险提示", "谨慎"]
+
+    for kw in high_keywords:
+        risk_factors["high_severity_count"] += history_lower.count(kw)
+
+    for kw in medium_keywords:
+        risk_factors["medium_severity_count"] += history_lower.count(kw)
+
+    # Check for specific risk types
+    if any(kw in history for kw in ["现金流", "经营现金流", "资金链"]):
+        risk_factors["cashflow_issue"] = True
+
+    if any(kw in history for kw in ["存货", "库存", "周转"]):
+        risk_factors["inventory_risk"] = True
+
+    return risk_factors
 
 
 def create_portfolio_manager(llm, memory):
@@ -204,6 +303,13 @@ def create_portfolio_manager(llm, memory):
             confidence = min(1.0, max(0.1, confidence * calibration.calibration_factor))
             logger.info(f"Calibrated confidence: {original_confidence:.2f} -> {confidence:.2f}")
 
+        # Extract risk factors and calculate sentiment score
+        risk_factors = _extract_risk_factors(history)
+        sentiment_score = _calculate_sentiment_score(signal, confidence, risk_factors)
+        score_label = _get_score_label(sentiment_score)
+
+        logger.info(f"Sentiment score: {sentiment_score} ({score_label}) for {ticker}")
+
         # Record the analysis for future calibration
         try:
             analysis_memory = get_analysis_memory()
@@ -218,6 +324,31 @@ def create_portfolio_manager(llm, memory):
         except Exception as e:
             logger.warning(f"Failed to record analysis: {e}")
 
+        # Add score information to the decision output
+        score_section = f"""
+
+---
+
+## 综合评分
+
+| 指标 | 数值 |
+|------|------|
+| **情绪评分** | {sentiment_score}/100 |
+| **评分解读** | {score_label} |
+| **信号类型** | {signal.upper()} |
+| **置信度** | {confidence:.0%} |
+
+**评分说明**：
+- 80-100分：强烈看好，建议积极配置
+- 60-79分：偏多，可考虑适度配置
+- 40-59分：中性，建议观望或轻仓
+- 20-39分：偏空，建议减仓或回避
+- 0-19分：强烈看空，建议清仓
+"""
+
+        # Append score section to the decision
+        final_decision = cleaned_content + score_section
+
         new_risk_debate_state = {
             "judge_decision": cleaned_content,
             "history": risk_debate_state["history"],
@@ -226,14 +357,15 @@ def create_portfolio_manager(llm, memory):
             "neutral_history": risk_debate_state["neutral_history"],
             "latest_speaker": "Judge",
             "current_aggressive_response": risk_debate_state["current_aggressive_response"],
-            "current_conservative_response": risk_debate_state["current_conservative_response"],
+            "current_conservative_response": risk_debate_state["current_conversative_response"],
             "current_neutral_response": risk_debate_state["current_neutral_response"],
             "count": risk_debate_state["count"],
         }
 
         return {
             "risk_debate_state": new_risk_debate_state,
-            "final_trade_decision": cleaned_content,
+            "final_trade_decision": final_decision,
+            "sentiment_score": sentiment_score,
         }
 
     return portfolio_manager_node
