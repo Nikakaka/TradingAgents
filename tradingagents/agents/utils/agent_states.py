@@ -74,3 +74,8 @@ class AgentState(MessagesState):
         RiskDebateState, "Current state of the debate on evaluating risk"
     ]
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
+
+    # sentiment scoring (added for multi-dimensional scoring system)
+    sentiment_score: Annotated[int | None, "Sentiment score from 0-100"]
+    signal: Annotated[str | None, "Trading signal: buy/hold/sell"]
+    confidence: Annotated[float | None, "Confidence level 0-1"]

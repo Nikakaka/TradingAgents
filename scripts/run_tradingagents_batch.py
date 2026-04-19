@@ -480,6 +480,131 @@ def decision_label(decision: str | None) -> str:
     return mapping.get((decision or "").upper(), decision or "\u672a\u77e5")
 
 
+def extract_sentiment_score_from_text(content: str) -> int | None:
+    """Extract sentiment score from report content.
+
+    Looks for pattern like: | **情绪评分** | 50/100 |
+    """
+    if not content:
+        return None
+
+    # Pattern: | **情绪评分** | XX/100 |
+    patterns = [
+        r'\|\s*\*?\*?情绪评分\*?\*?\s*\|\s*(\d+)/100\s*\|',
+        r'情绪评分[：:]\s*(\d+)/100',
+        r'sentiment.?score[：:]\s*(\d+)',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, content, flags=re.I)
+        if match:
+            return int(match.group(1))
+
+    return None
+
+
+def extract_confidence_from_text(content: str) -> float | None:
+    """Extract confidence from report content.
+
+    Looks for pattern like: | **置信度** | 70% |
+    """
+    if not content:
+        return None
+
+    # Pattern: | **置信度** | XX% |
+    patterns = [
+        r'\|\s*\*?\*?置信度\*?\*?\s*\|\s*(\d+(?:\.\d+)?)%\s*\|',
+        r'置信度[：:]\s*(\d+(?:\.\d+)?)%',
+        r'confidence[：:]\s*(\d+(?:\.\d+)?)%',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, content, flags=re.I)
+        if match:
+            return float(match.group(1)) / 100
+
+    return None
+
+
+def extract_rating_from_text(content: str) -> str | None:
+    """Extract rating (评级) from report content.
+
+    Looks for pattern like: **评级**：买入 / 超配 / 持有 / 低配 / 卖出
+    """
+    if not content:
+        return None
+
+    # Pattern: **评级**：XXX
+    rating_map = {
+        "买入": "BUY",
+        "超配": "OVERWEIGHT",
+        "持有": "HOLD",
+        "观望": "HOLD",
+        "低配": "UNDERWEIGHT",
+        "卖出": "SELL",
+    }
+
+    patterns = [
+        r'\*?\*?评级\*?\*?[：:]\s*([^\n]+)',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, content)
+        if match:
+            rating_text = match.group(1).strip()
+            for cn, en in rating_map.items():
+                if cn in rating_text:
+                    return en
+
+    return None
+
+
+def extract_executive_summary_from_text(content: str) -> str | None:
+    """Extract executive summary from Portfolio Manager Decision section.
+
+    Looks for: **执行摘要**：内容
+    """
+    if not content:
+        return None
+
+    lines = content.replace("\r\n", "\n").split("\n")
+
+    # Find Portfolio Manager Decision section
+    portfolio_section_start = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        for marker in PORTFOLIO_DECISION_MARKERS:
+            if marker in stripped:
+                portfolio_section_start = i
+                break
+        if portfolio_section_start is not None:
+            break
+
+    if portfolio_section_start is None:
+        return None
+
+    # Look for executive summary within portfolio section
+    for line in lines[portfolio_section_start:]:
+        stripped = line.strip()
+        # Check for bold inline format: **执行摘要**：内容
+        for heading in ["执行摘要", "投资要点"]:
+            pattern = f"**{heading}**\uff1a"  # Chinese colon
+            if pattern in stripped:
+                idx = stripped.find(pattern) + len(pattern)
+                summary_text = stripped[idx:].strip()
+                if summary_text:
+                    return summary_text
+            # Also try with regular colon
+            pattern = f"**{heading}**:"
+            if pattern in stripped:
+                idx = stripped.find(pattern) + len(pattern)
+                summary_text = stripped[idx:].strip()
+                if summary_text:
+                    return summary_text
+
+    return None
+
+
 def decision_bucket(item: dict[str, Any]) -> str:
     """Bucket items by decision for summary grouping.
 
@@ -597,6 +722,25 @@ def enrich_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             current_decision = extract_decision_from_text(report_text)
         previous_decision, previous_report = find_previous_report(item)
 
+        # Extract sentiment score, confidence, and rating from result or report
+        sentiment_score = item.get("sentiment_score")
+        confidence = item.get("confidence")
+        signal = item.get("signal")
+        rating = None
+
+        # If not in result JSON, try to extract from report text
+        if sentiment_score is None:
+            sentiment_score = extract_sentiment_score_from_text(report_text)
+        if confidence is None:
+            confidence = extract_confidence_from_text(report_text)
+        if signal is None:
+            rating = extract_rating_from_text(report_text)
+            if rating:
+                signal = rating.lower() if rating in ["BUY", "SELL", "HOLD"] else None
+
+        # Extract executive summary from Portfolio Manager Decision section
+        executive_summary = extract_executive_summary_from_text(report_text)
+
         enriched_item = item.copy()
         enriched_item["decision"] = current_decision or item.get("decision")
         enriched_item["display_name"] = display_name(ticker, display_names)
@@ -605,6 +749,14 @@ def enrich_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         enriched_item["previous_decision"] = previous_decision
         enriched_item["previous_report_file"] = previous_report
         enriched_item["decision_change"] = decision_change_label(current_decision, previous_decision)
+
+        # Add scoring information
+        enriched_item["sentiment_score"] = sentiment_score
+        enriched_item["confidence"] = confidence
+        enriched_item["signal"] = signal
+        enriched_item["rating"] = rating or (current_decision if current_decision else None)
+        enriched_item["executive_summary"] = executive_summary
+
         enriched.append(enriched_item)
 
     return enriched

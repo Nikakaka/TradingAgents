@@ -292,6 +292,9 @@ def main() -> int:
         **summary,
         "decision": decision,
         "report_file": str(report_file.resolve()),
+        "sentiment_score": final_state.get("sentiment_score"),
+        "signal": final_state.get("signal"),
+        "confidence": final_state.get("confidence"),
     }
     write_result_json(args.result_json, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
