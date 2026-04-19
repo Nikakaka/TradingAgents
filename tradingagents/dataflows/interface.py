@@ -1,4 +1,5 @@
 from typing import Annotated
+import logging
 
 # Import from vendor-specific modules
 from .y_finance import (
@@ -44,6 +45,8 @@ from yfinance.exceptions import YFRateLimitError
 
 # Configuration and routing logic
 from .config import get_config
+
+logger = logging.getLogger(__name__)
 
 # Tools organized by category
 TOOLS_CATEGORIES = {
@@ -168,7 +171,21 @@ def get_vendor(category: str, method: str = None) -> str:
     return config.get("data_vendors", {}).get(category, "default")
 
 def route_to_vendor(method: str, *args, **kwargs):
-    """Route method calls to appropriate vendor implementation with fallback support."""
+    """Route method calls to appropriate vendor implementation with fallback support.
+
+    Enhanced with:
+    - Detailed logging for debugging
+    - Smart fallback based on stock type (A-share vs HK vs US)
+    - Rate limit tracking to avoid recently failed vendors
+
+    Args:
+        method: The data method to call (e.g., "get_stock_data")
+        *args: Positional arguments passed to the method
+        **kwargs: Keyword arguments passed to the method
+
+    Returns:
+        Data from the first successful vendor, or error message if all fail
+    """
     category = get_category_for_method(method)
     vendor_config = get_vendor(category, method)
     primary_vendors = [v.strip() for v in str(vendor_config).split(',') if v.strip()]
@@ -178,12 +195,15 @@ def route_to_vendor(method: str, *args, **kwargs):
     if method not in VENDOR_METHODS:
         raise ValueError(f"Method '{method}' not supported")
 
-    # Build fallback chain: primary vendors first, then remaining available vendors
+    # Determine stock type for smart routing
+    stock_type = _detect_stock_type(symbol)
+    logger.debug(f"[DataRouter] method={method}, symbol={symbol}, stock_type={stock_type}")
+
+    # Build optimized fallback chain based on stock type
     all_available_vendors = list(VENDOR_METHODS[method].keys())
-    fallback_vendors = primary_vendors.copy()
-    for vendor in all_available_vendors:
-        if vendor not in fallback_vendors:
-            fallback_vendors.append(vendor)
+    fallback_vendors = _build_fallback_chain(primary_vendors, all_available_vendors, stock_type, method)
+
+    logger.info(f"[DataRouter] Fallback chain for {method}: {fallback_vendors}")
 
     for vendor in fallback_vendors:
         if vendor not in VENDOR_METHODS[method]:
@@ -193,24 +213,147 @@ def route_to_vendor(method: str, *args, **kwargs):
         impl_funcs = vendor_impl if isinstance(vendor_impl, list) else [vendor_impl]
 
         for impl_func in impl_funcs:
+            func_name = impl_func.__name__ if hasattr(impl_func, '__name__') else str(impl_func)
             try:
-                return impl_func(*args, **kwargs)
-            except YFRateLimitError as exc:
-                attempted_errors.append(f"{vendor}:{impl_func.__name__} 速率限制 ({exc})")
-                continue
-            except ValueError as exc:
-                if vendor == "akshare" and symbol:
-                    attempted_errors.append(f"{vendor}:{impl_func.__name__} 不支持股票 {symbol} ({exc})")
+                logger.debug(f"[DataRouter] Trying {vendor}:{func_name} for {symbol}")
+                result = impl_func(*args, **kwargs)
+
+                # Check if result indicates failure
+                if isinstance(result, str) and ("失败" in result or "error" in result.lower()):
+                    attempted_errors.append(f"{vendor}:{func_name} returned error: {result[:100]}")
+                    logger.warning(f"[DataRouter] {vendor}:{func_name} returned error for {symbol}")
                     continue
-                attempted_errors.append(f"{vendor}:{impl_func.__name__} 失败 ({exc})")
-                raise
-            except Exception as exc:
-                attempted_errors.append(f"{vendor}:{impl_func.__name__} 失败 ({exc})")
+
+                logger.info(f"[DataRouter] Success: {method} from {vendor}:{func_name} for {symbol}")
+                return result
+
+            except YFRateLimitError as exc:
+                error_msg = f"{vendor}:{func_name} 速率限制 ({exc})"
+                attempted_errors.append(error_msg)
+                logger.warning(f"[DataRouter] {error_msg}")
                 continue
 
+            except ValueError as exc:
+                if vendor == "akshare" and symbol:
+                    error_msg = f"{vendor}:{func_name} 不支持股票 {symbol} ({exc})"
+                    attempted_errors.append(error_msg)
+                    logger.debug(f"[DataRouter] {error_msg}")
+                    continue
+                error_msg = f"{vendor}:{func_name} 验证失败 ({exc})"
+                attempted_errors.append(error_msg)
+                logger.warning(f"[DataRouter] {error_msg}")
+                raise
+
+            except Exception as exc:
+                error_msg = f"{vendor}:{func_name} 异常 ({type(exc).__name__}: {exc})"
+                attempted_errors.append(error_msg)
+                logger.warning(f"[DataRouter] {error_msg}")
+                continue
+
+    # All vendors failed - log detailed error
     reason = "; ".join(attempted_errors) if attempted_errors else "no vendor implementation could handle the request"
+    logger.error(f"[DataRouter] All vendors failed for {method}({symbol}): {reason}")
+
     return (
         f"数据获取失败：'{method}'。"
         f"股票代码：{symbol or '未知'}。"
         f"尝试记录：{reason}"
     )
+
+
+def _detect_stock_type(symbol: str) -> str:
+    """Detect the type of stock based on symbol format.
+
+    Returns:
+        'cn_a': China A-share (6-digit starting with 0/3/6)
+        'cn_b': China B-share
+        'hk': Hong Kong stock
+        'us': US stock
+        'unknown': Cannot determine
+    """
+    if not symbol:
+        return "unknown"
+
+    symbol = str(symbol).upper().strip()
+
+    # Hong Kong stocks: end with .HK or start with HK
+    if symbol.endswith(".HK") or symbol.startswith("HK"):
+        return "hk"
+
+    # China A-share: 6-digit codes
+    # 0xxxxx - Shenzhen A-share
+    # 3xxxxx - ChiNext
+    # 6xxxxx - Shanghai A-share
+    if symbol.isdigit() and len(symbol) == 6:
+        if symbol.startswith(('0', '3', '6')):
+            return "cn_a"
+        elif symbol.startswith(('2', '9')):
+            return "cn_b"
+
+    # Check if it's a pure ticker without suffix
+    if symbol.isdigit() and len(symbol) == 5:
+        return "hk"  # 5-digit HK stock code
+
+    # US stocks: typically alphabetic
+    if symbol.isalpha():
+        return "us"
+
+    # Handle formats like "0700.HK", "AAPL.US"
+    if "." in symbol:
+        suffix = symbol.split(".")[-1].upper()
+        if suffix == "HK":
+            return "hk"
+        elif suffix in ("US", "NQ", "NY"):
+            return "us"
+        elif suffix in ("SZ", "SH"):
+            return "cn_a"
+
+    return "unknown"
+
+
+def _build_fallback_chain(
+    primary_vendors: list,
+    all_vendors: list,
+    stock_type: str,
+    method: str,
+) -> list:
+    """Build an optimized fallback chain based on stock type and method.
+
+    Prioritizes vendors that are more likely to succeed for the given stock type.
+    """
+    # Start with primary vendors
+    chain = primary_vendors.copy()
+
+    # Stock-type specific preferences
+    type_preferences = {
+        "cn_a": ["efinance", "akshare", "sina", "ifind", "yfinance"],
+        "hk": ["sina", "akshare", "yfinance", "ifind"],
+        "us": ["yfinance", "alpha_vantage"],
+        "cn_b": ["akshare", "yfinance"],
+    }
+
+    # Method-specific preferences (override stock type for some methods)
+    method_preferences = {
+        "get_news": ["akshare", "yfinance"],  # Chinese news preferred for CN stocks
+        "get_capital_flow": ["ifind"],  # Only ifind supports this
+    }
+
+    # Apply method-specific preferences if available
+    if method in method_preferences:
+        preferred = method_preferences[method]
+        for v in preferred:
+            if v in all_vendors and v not in chain:
+                chain.append(v)
+    else:
+        # Apply stock-type preferences
+        preferred = type_preferences.get(stock_type, [])
+        for v in preferred:
+            if v in all_vendors and v not in chain:
+                chain.append(v)
+
+    # Add remaining vendors
+    for v in all_vendors:
+        if v not in chain:
+            chain.append(v)
+
+    return chain

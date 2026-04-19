@@ -1,6 +1,14 @@
 import re
-
+import logging
 from tradingagents.agents.utils.agent_utils import build_instrument_context
+from tradingagents.agents.utils.analysis_memory import (
+    get_analysis_memory,
+    get_calibration,
+    record_analysis,
+    CalibrationResult,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _clean_pseudo_tool_calls(text: str) -> str:
@@ -39,10 +47,74 @@ def _clean_pseudo_tool_calls(text: str) -> str:
     return text.strip()
 
 
+def _extract_signal_and_confidence(content: str) -> tuple:
+    """Extract trading signal and confidence from portfolio manager response.
+
+    Returns:
+        Tuple of (signal, confidence) where signal is one of buy/hold/sell
+        and confidence is a float between 0 and 1.
+    """
+    if not content:
+        return "hold", 0.5
+
+    content_lower = content.lower()
+
+    # Extract signal from the response
+    signal = "hold"
+    if "**评级**：" in content or "评级：" in content:
+        rating_line = ""
+        for line in content.split("\n"):
+            if "评级" in line:
+                rating_line = line.lower()
+                break
+
+        if "买入" in rating_line:
+            signal = "buy"
+        elif "卖出" in rating_line:
+            signal = "sell"
+        elif "持有" in rating_line or "观望" in rating_line:
+            signal = "hold"
+        elif "超配" in rating_line:
+            signal = "buy"  # Treat overweight as buy signal
+        elif "低配" in rating_line:
+            signal = "sell"  # Treat underweight as sell signal
+    else:
+        # Fallback: look for signal keywords anywhere
+        if "买入" in content_lower:
+            signal = "buy"
+        elif "卖出" in content_lower:
+            signal = "sell"
+
+    # Extract or estimate confidence
+    confidence = 0.5
+
+    # Look for explicit confidence mentions
+    import re
+    conf_match = re.search(r'置信度[：:]\s*(\d+(?:\.\d+)?)\s*%', content)
+    if conf_match:
+        confidence = float(conf_match.group(1)) / 100
+    else:
+        # Estimate confidence based on language strength
+        strong_words = ["强烈", "明确", "坚定", "确认"]
+        weak_words = ["可能", "或许", "待观察", "谨慎", "不确定性"]
+
+        strong_count = sum(1 for w in strong_words if w in content)
+        weak_count = sum(1 for w in weak_words if w in content)
+
+        if strong_count > weak_count:
+            confidence = 0.7
+        elif weak_count > strong_count:
+            confidence = 0.4
+
+    return signal, min(1.0, max(0.1, confidence))
+
+
 def create_portfolio_manager(llm, memory):
     def portfolio_manager_node(state) -> dict:
 
         instrument_context = build_instrument_context(state["company_of_interest"])
+        ticker = state["company_of_interest"]
+        analysis_date = state.get("trade_date", "")
 
         history = state["risk_debate_state"]["history"]
         risk_debate_state = state["risk_debate_state"]
@@ -52,6 +124,22 @@ def create_portfolio_manager(llm, memory):
         sentiment_report = state["sentiment_report"]
         research_plan = state["investment_plan"]  # 研究经理的投资计划
         trader_plan = state["trader_investment_plan"]  # 交易员的交易提案
+
+        # Get historical calibration for this ticker
+        calibration = get_calibration(ticker=ticker)
+        calibration_context = ""
+        if calibration.calibrated:
+            calibration_context = f"""
+**历史校准信息**：
+- 该股票历史分析准确率：{calibration.accuracy:.1%}
+- 买入信号准确率：{calibration.buy_accuracy:.1%}
+- 卖出信号准确率：{calibration.sell_accuracy:.1%}
+- 持有信号准确率：{calibration.hold_accuracy:.1%}
+- 样本数：{calibration.total_samples}次
+
+请根据历史准确率调整您的置信度评估。
+"""
+            logger.info(f"Applied calibration for {ticker}: accuracy={calibration.accuracy:.1%}, factor={calibration.calibration_factor:.2f}")
 
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
         past_memories = memory.get_memories(curr_situation, n_matches=2)
@@ -77,7 +165,7 @@ def create_portfolio_manager(llm, memory):
 - 研究经理的投资计划：**{research_plan}**
 - 交易员的交易提案：**{trader_plan}**
 - 过往决策经验：**{past_memory_str}**
-
+{calibration_context}
 **必需的输出格式（严格按此格式）：**
 
 **评级**：[选择：买入 / 超配 / 持有 / 低配 / 卖出]
@@ -106,6 +194,29 @@ def create_portfolio_manager(llm, memory):
 
         # Clean pseudo tool calls from response
         cleaned_content = _clean_pseudo_tool_calls(response.content)
+
+        # Extract signal and confidence for recording
+        signal, confidence = _extract_signal_and_confidence(cleaned_content)
+
+        # Apply calibration to confidence if available
+        if calibration.calibrated:
+            original_confidence = confidence
+            confidence = min(1.0, max(0.1, confidence * calibration.calibration_factor))
+            logger.info(f"Calibrated confidence: {original_confidence:.2f} -> {confidence:.2f}")
+
+        # Record the analysis for future calibration
+        try:
+            analysis_memory = get_analysis_memory()
+            analysis_memory.record_analysis(
+                ticker=ticker,
+                analysis_date=analysis_date,
+                signal=signal,
+                confidence=confidence,
+                reasoning=cleaned_content[:500],
+                agent_name="portfolio_manager",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record analysis: {e}")
 
         new_risk_debate_state = {
             "judge_decision": cleaned_content,
