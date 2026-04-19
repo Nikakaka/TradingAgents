@@ -208,6 +208,9 @@ _PASSTHROUGH_KWARGS = (
 # Provider base URLs and API key env vars
 _PROVIDER_CONFIG = {
     "xai": ("https://api.x.ai/v1", "XAI_API_KEY"),
+    "deepseek": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    "qwen": ("https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY"),
+    "glm": ("https://api.z.ai/api/paas/v4/", "ZHIPU_API_KEY"),
     "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
     "zhipu": ("https://open.bigmodel.cn/api/paas/v4", "ZHIPUAI_API_KEY"),
     "jd": ("https://modelservice.jdcloud.com/coding/openai/v1", "JD_API_KEY"),
@@ -216,7 +219,13 @@ _PROVIDER_CONFIG = {
 
 
 class OpenAIClient(BaseLLMClient):
-    """Client for OpenAI-compatible providers."""
+    """Client for OpenAI, Ollama, OpenRouter, and xAI providers.
+
+    For native OpenAI models, uses the Responses API (/v1/responses) which
+    supports reasoning_effort with function tools across all model families
+    (GPT-4.1, GPT-5). Third-party compatible providers (xAI, OpenRouter,
+    Ollama) use standard Chat Completions.
+    """
 
     def __init__(
         self,
@@ -230,8 +239,10 @@ class OpenAIClient(BaseLLMClient):
 
     def get_llm(self) -> Any:
         """Return configured ChatOpenAI instance."""
+        self.warn_if_unknown_model()
         llm_kwargs = {"model": self.model}
 
+        # Provider-specific base URL and auth
         if self.provider in _PROVIDER_CONFIG:
             base_url, api_key_env = _PROVIDER_CONFIG[self.provider]
             llm_kwargs["base_url"] = base_url
@@ -244,6 +255,7 @@ class OpenAIClient(BaseLLMClient):
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
 
+        # Forward user-provided kwargs
         for key in _PASSTHROUGH_KWARGS:
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
@@ -256,6 +268,8 @@ class OpenAIClient(BaseLLMClient):
         if "max_retries" not in llm_kwargs:
             llm_kwargs["max_retries"] = self.kwargs.get("max_retries", 2)
 
+        # Native OpenAI: use Responses API for consistent behavior across
+        # all model families. Third-party providers use Chat Completions.
         if self.provider == "openai":
             llm_kwargs["use_responses_api"] = True
 

@@ -50,7 +50,8 @@ def create_portfolio_manager(llm, memory):
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
         sentiment_report = state["sentiment_report"]
-        trader_plan = state["investment_plan"]
+        research_plan = state["investment_plan"]  # 研究经理的投资计划
+        trader_plan = state["trader_investment_plan"]  # 交易员的交易提案
 
         curr_situation = f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
         past_memories = memory.get_memories(curr_situation, n_matches=2)
@@ -73,7 +74,8 @@ def create_portfolio_manager(llm, memory):
 - **卖出**：清仓或避免入场
 
 **背景：**
-- 交易员建议方案：**{trader_plan}**
+- 研究经理的投资计划：**{research_plan}**
+- 交易员的交易提案：**{trader_plan}**
 - 过往决策经验：**{past_memory_str}**
 
 **必需的输出格式（严格按此格式）：**

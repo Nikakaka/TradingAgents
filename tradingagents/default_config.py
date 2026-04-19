@@ -2,17 +2,15 @@ import os
 
 from tradingagents.model_registry import get_provider_defaults
 
+_TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
 
 _MODEL_DEFAULTS = get_provider_defaults()
 _FALLBACK_MODEL_DEFAULTS = get_provider_defaults("ollama")
 
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
-    "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", "./results"),
-    "data_cache_dir": os.path.join(
-        os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
-        "dataflows/data_cache",
-    ),
+    "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", os.path.join(_TRADINGAGENTS_HOME, "logs")),
+    "data_cache_dir": os.getenv("TRADINGAGENTS_CACHE_DIR", os.path.join(_TRADINGAGENTS_HOME, "cache")),
     # LLM settings
     "llm_provider": _MODEL_DEFAULTS["provider"],
     "deep_think_llm": _MODEL_DEFAULTS["deep_model"],
