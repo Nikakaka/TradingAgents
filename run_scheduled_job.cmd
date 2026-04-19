@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 REM ============================================================
 REM OpenClaw Scheduled Job Runner
@@ -10,12 +11,12 @@ REM 3. Send Feishu notification
 REM
 REM Usage:
 REM   run_scheduled_job.cmd morning   # Morning analysis (depth=1)
-REM   run_scheduled_job.cmd evening   # Evening analysis (depth=2)
+REM   run_scheduled_job.cmd evening   # Evening analysis (depth=3)
 REM
-REM Optimizations for depth=2:
+REM Optimizations for depth=3:
 REM - Increased recursion limit to 600
 REM - Memory cleanup between stocks
-REM - 2-hour timeout for batch analysis
+REM - 6-hour timeout for batch analysis
 REM
 REM Position files are read from G:\Finance\持仓 (latest file by date)
 REM
@@ -41,12 +42,12 @@ if "%TASK_TYPE%"=="morning" (
     set "DEPTH=1"
     set "TASK_FILE=openclaw\tasks\positions_morning.json"
     set "TASK_NAME=Morning Quick Analysis"
-    set "TIMEOUT=1800"
+    set "TIMEOUT=9000"
 ) else if "%TASK_TYPE%"=="evening" (
-    set "DEPTH=2"
+    set "DEPTH=3"
     set "TASK_FILE=openclaw\tasks\positions_evening.json"
     set "TASK_NAME=Evening Deep Analysis"
-    set "TIMEOUT=10800"
+    set "TIMEOUT=21600"
 ) else (
     echo [ERROR] Unknown task type: %TASK_TYPE%
     echo Usage: run_scheduled_job.cmd ^<morning^|evening^>
