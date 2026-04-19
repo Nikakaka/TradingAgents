@@ -307,6 +307,39 @@ def _extract_rating(text: str) -> str:
     return match.group(1).capitalize() if match else "Unknown"
 
 
+def _extract_sentiment_score(text: str) -> int | None:
+    """Extract sentiment score (0-100) from decision text.
+
+    Looks for patterns like:
+    - **情绪评分**: 75
+    - 情绪评分：75
+    - | **情绪评分** | 75/100 |
+    """
+    if not text:
+        return None
+
+    # Clean extended thinking tags
+    text = _clean_extended_thinking_tags(text)
+
+    # Patterns to match sentiment score
+    patterns = [
+        r"\*\*情绪评分\*\*[:\s：]*\*{0,2}(\d+)",
+        r"\|\s*\*\*情绪评分\*\*\s*\|\s*(\d+)/\d+\s*\|",  # Table format: | **情绪评分** | 75/100 |
+        r"情绪评分[:：]\s*(\d+)",
+        r"\*\*评分\*\*[:\s：]*\*{0,2}(\d+)",
+        r"sentiment\s*score[:\s：]*\*{0,2}(\d+)",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            score = int(match.group(1))
+            if 0 <= score <= 100:
+                return score
+
+    return None
+
+
 def _extract_numbered_section(text: str, label: str) -> str:
     if not text:
         return ""
@@ -793,6 +826,9 @@ def load_report_list() -> List[Dict[str, Any]]:
                 _preferred_chinese_summary(complete_text) or _extract_report_highlights(complete_text)
             )
 
+        # Extract sentiment score
+        sentiment_score = _extract_sentiment_score(decision_text) or _extract_sentiment_score(complete_text)
+
         # Check for Chinese section folders (new format) or English folders (legacy)
         has_chinese_sections = (folder / "1_分析师").exists() or (folder / "4_风险管理").exists()
 
@@ -802,6 +838,7 @@ def load_report_list() -> List[Dict[str, Any]]:
             "display_name": _get_display_name(ticker),
             "created_at": _parse_report_timestamp(folder.name, folder.stat().st_mtime),
             "decision": _extract_rating(decision_text or complete_text),
+            "score": sentiment_score,
             "summary": list_summary,
             # Reports are now generated in Chinese directly
             "report_language": "zh",
@@ -898,12 +935,6 @@ def load_report_detail(report_id: str) -> Dict[str, Any]:
     # Clean extended thinking tags
     complete_text = _clean_extended_thinking_tags(complete_text)
 
-    # Extract summary from Chinese report
-    detail_summary = _preferred_text_excerpt(
-        _preferred_chinese_summary(complete_text) or _extract_report_highlights(complete_text),
-        600,
-    )
-
     ticker = _extract_ticker_from_report_id(report_id)
 
     # Get decision from either Chinese or legacy path
@@ -913,12 +944,26 @@ def load_report_detail(report_id: str) -> Dict[str, Any]:
     decision_text = decision_path.read_text(encoding="utf-8", errors="ignore") if decision_path.exists() else ""
     decision_text = _clean_extended_thinking_tags(decision_text)
 
+    # Extract summary: prefer executive summary from portfolio decision (same logic as list)
+    exec_summary = _extract_executive_summary_from_decision(decision_text)
+    if exec_summary:
+        detail_summary = _summarize_report_excerpt(exec_summary)
+    else:
+        # Fallback to extracting from complete report
+        detail_summary = _summarize_report_excerpt(
+            _preferred_chinese_summary(complete_text) or _extract_report_highlights(complete_text)
+        )
+
+    # Extract sentiment score
+    sentiment_score = _extract_sentiment_score(decision_text) or _extract_sentiment_score(complete_text)
+
     return {
         "id": report_id,
         "ticker": ticker,
         "display_name": _get_display_name(ticker),
         "created_at": _parse_report_timestamp(report_id, report_dir.stat().st_mtime),
         "decision": _extract_rating(decision_text or complete_text),
+        "score": sentiment_score,
         "executive_summary": detail_summary,
         "investment_thesis": "报告已直接生成中文版本。",
         "full_report_html": markdown_to_html(complete_text),

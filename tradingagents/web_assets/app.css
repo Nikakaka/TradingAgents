@@ -695,3 +695,384 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* ========================================
+   Enhanced Report Card Styles
+   ======================================== */
+
+.report-card {
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.report-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(13, 107, 99, 0.25);
+  box-shadow: 0 12px 28px rgba(13, 107, 99, 0.08);
+}
+
+.report-card.active {
+  background: linear-gradient(180deg, rgba(13, 107, 99, 0.12), rgba(255, 255, 255, 0.92));
+  border-color: rgba(13, 107, 99, 0.28);
+}
+
+/* Score badge in report card */
+.report-score-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(13, 107, 99, 0.1), rgba(13, 107, 99, 0.05));
+  border: 1px solid rgba(13, 107, 99, 0.15);
+}
+
+.report-score-value {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Cascadia Code', monospace;
+}
+
+.report-score-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Score color variants */
+.score-high { color: #00d4ff; }
+.score-medium { color: #a855f7; }
+.score-low { color: #ff4466; }
+
+/* ========================================
+   Report Detail Enhancements
+   ======================================== */
+
+.detail-hero {
+  padding: 28px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(16, 90, 83, 0.96), rgba(24, 129, 118, 0.88));
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.detail-hero::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 60%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.detail-hero h2 {
+  font-size: clamp(28px, 3vw, 36px);
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.detail-hero p {
+  color: rgba(255, 255, 255, 0.82);
+  position: relative;
+}
+
+/* Score gauge section in detail view */
+.score-gauge-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
+  border-radius: 20px;
+  border: 1px solid var(--line);
+}
+
+/* Executive summary card */
+.executive-summary-card {
+  padding: 20px;
+  border-radius: 18px;
+  background: rgba(13, 107, 99, 0.04);
+  border: 1px solid rgba(13, 107, 99, 0.12);
+  margin-bottom: 20px;
+}
+
+.executive-summary-card h4 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.executive-summary-card p {
+  line-height: 1.8;
+  color: var(--ink);
+}
+
+/* Key metrics grid */
+.key-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.key-metric-item {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--line);
+  text-align: center;
+}
+
+.key-metric-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.key-metric-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* ========================================
+   Enhanced Job Status Display
+   ======================================== */
+
+.job-card {
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.76);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.job-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(13, 107, 99, 0.25);
+}
+
+/* Progress bar */
+.job-progress-bar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(13, 107, 99, 0.1);
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.job-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), #0f7d71);
+  transition: width 500ms ease;
+}
+
+/* Agent status chips */
+.agent-status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(31, 42, 45, 0.06);
+  color: var(--muted);
+}
+
+.agent-chip.completed {
+  background: rgba(19, 127, 86, 0.12);
+  color: var(--buy);
+}
+
+.agent-chip.running {
+  background: rgba(13, 107, 99, 0.12);
+  color: var(--accent);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(13, 107, 99, 0.2); }
+  50% { box-shadow: 0 0 0 6px rgba(13, 107, 99, 0); }
+}
+
+/* Status indicator dot */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.agent-chip.running .status-dot {
+  animation: blink 1s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ========================================
+   Analysis Form Enhancements
+   ======================================== */
+
+.analyst-chips-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.analyst-chip {
+  position: relative;
+}
+
+.analyst-chip input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.analyst-chip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.analyst-chip input:checked + span {
+  background: var(--accent-soft);
+  border-color: rgba(13, 107, 99, 0.28);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.analyst-chip span:hover {
+  border-color: rgba(13, 107, 99, 0.2);
+}
+
+/* Analyst icons */
+.analyst-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+}
+
+.analyst-chip input:checked + span .analyst-icon {
+  opacity: 1;
+}
+
+/* ========================================
+   Responsive Adjustments
+   ======================================== */
+
+@media (max-width: 1180px) {
+  .detail-header {
+    grid-template-columns: 1fr;
+  }
+
+  .score-gauge-section {
+    order: -1;
+  }
+}
+
+@media (min-width: 1200px) {
+  .detail-header {
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+}
+
+/* ========================================
+   Animations
+   ======================================== */
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 400ms ease-out;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slide-up 500ms ease-out;
+}
+
+/* ========================================
+   Dark Mode Support (Optional)
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419;
+    --bg-soft: #192028;
+    --panel: rgba(25, 32, 40, 0.88);
+    --ink: #e7e9ea;
+    --muted: #8b98a5;
+    --line: rgba(255, 255, 255, 0.12);
+  }
+
+  .hero {
+    background: linear-gradient(135deg, rgba(25, 32, 40, 0.92), rgba(20, 30, 38, 0.9));
+  }
+
+  .metric-card,
+  .card {
+    background: var(--panel);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  input,
+  select {
+    background: rgba(25, 32, 40, 0.76);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: var(--ink);
+  }
+
+  .job-card,
+  .report-card {
+    background: rgba(25, 32, 40, 0.76);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .detail-hero {
+    background: linear-gradient(135deg, rgba(16, 90, 83, 0.7), rgba(24, 129, 118, 0.6));
+  }
+}
