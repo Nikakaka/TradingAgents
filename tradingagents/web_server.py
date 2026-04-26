@@ -17,7 +17,7 @@ from cli.stats_handler import StatsCallbackHandler
 from cli.utils import get_installed_ollama_models
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.market_utils import load_symbol_index, resolve_ticker_input, search_symbol_candidates
+from tradingagents.market_utils import load_symbol_index, normalize_ticker_symbol, resolve_ticker_input, search_symbol_candidates
 from tradingagents.model_registry import get_model_options, list_provider_options
 from tradingagents.reporting import save_report_to_disk
 
@@ -128,7 +128,8 @@ def _get_symbol_index() -> list[dict]:
 
 
 def _get_display_name(ticker: str) -> str:
-    canonical = ticker.strip().upper()
+    # Normalize ticker to canonical form for consistent lookup
+    canonical = normalize_ticker_symbol(ticker).upper()
     if canonical in REPORT_DISPLAY_NAME_OVERRIDES:
         return REPORT_DISPLAY_NAME_OVERRIDES[canonical]
     for entry in _get_symbol_index():
