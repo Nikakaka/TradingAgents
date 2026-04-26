@@ -18,6 +18,12 @@ from tradingagents.agents.utils.news_data_tools import (
     get_insider_transactions,
     get_global_news
 )
+from tradingagents.agents.utils.cross_market_tools import (
+    get_cross_market_listings,
+    check_dual_listing,
+    get_cross_market_stock_data,
+    get_cross_market_comparison,
+)
 from tradingagents.market_utils import build_instrument_context_text
 
 
