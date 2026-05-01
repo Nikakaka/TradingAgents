@@ -184,7 +184,7 @@ class TradingAgentsGraph:
 
         # Set timeout for OpenAI-compatible providers (JD, xAI, OpenRouter, etc.)
         # This prevents hanging when API is slow or unresponsive
-        if provider_lower in ("openai", "jd", "xai", "openrouter", "zhipu"):
+        if provider_lower in ("openai", "jd", "xai", "openrouter", "zhipu", "volces"):
             if "timeout" not in kwargs:
                 kwargs["timeout"] = self.config.get("openai_timeout", 300)
             if "max_retries" not in kwargs:

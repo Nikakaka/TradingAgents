@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 
-DEFAULT_PROVIDER = "jd"
+DEFAULT_PROVIDER = "volces"
 
 PROVIDER_SPECS = {
     "openai": {
@@ -132,7 +132,23 @@ PROVIDER_SPECS = {
             "quick": "MiniMax-M2.5",
             "deep": "GLM-5",
         },
-    }
+    },
+    "volces": {
+        "label": "Volces (火山引擎)",
+        "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+        "api_key_label": "Volces API Key",
+        "api_key_placeholder": "输入 VOLCES_API_KEY",
+        "api_key_helper": "可直接覆盖当前分析任务使用的火山引擎 Key；留空时沿用本机已有环境变量。",
+        "requires_api_key": True,
+        "models": {
+            "quick": ["deepseek-v3.2", "glm-5.1"],
+            "deep": ["glm-5.1", "deepseek-v3.2"],
+        },
+        "defaults": {
+            "quick": "deepseek-v3.2",
+            "deep": "glm-5.1",
+        },
+    },
 }
 
 

@@ -232,6 +232,10 @@ def select_shallow_thinking_agent(provider) -> str:
             ("GLM-5", "GLM-5"),
             ("MiniMax-M2.5", "MiniMax-M2.5"),
         ],
+        "volces": [
+            ("DeepSeek-V3.2 - Fast, balanced", "deepseek-v3.2"),
+            ("GLM-5.1 - Strong reasoning", "glm-5.1"),
+        ],
         "ollama": ollama_choices,
     }
 
@@ -310,6 +314,10 @@ def select_deep_thinking_agent(provider) -> str:
             ("MiniMax-M2.5", "MiniMax-M2.5"),
             ("GLM-5", "GLM-5"),
         ],
+        "volces": [
+            ("GLM-5.1 - Strong reasoning", "glm-5.1"),
+            ("DeepSeek-V3.2 - Fast, balanced", "deepseek-v3.2"),
+        ],
         "ollama": ollama_choices,
     }
 
@@ -347,6 +355,7 @@ def select_llm_provider() -> tuple[str, str]:
         ("Openrouter", "openrouter", "https://openrouter.ai/api/v1"),
         ("Ollama", "ollama", "http://localhost:11434/v1"),
         ("JD", "jd", "https://modelservice.jdcloud.com/coding/openai/v1"),
+        ("Volces", "volces", "https://ark.cn-beijing.volces.com/api/coding/v3"),
     ]
     
     choice = questionary.select(

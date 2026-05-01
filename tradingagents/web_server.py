@@ -49,6 +49,7 @@ PROVIDER_API_KEY_ENV = {
     "zhipu": "ZHIPUAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
     "jd": "JD_API_KEY",
+    "volces": "VOLCES_API_KEY",
 }
 
 
