@@ -47,15 +47,19 @@ DEFAULT_CONFIG = {
     # akshare: A-share/HK data (free, comprehensive)
     # Note: iFinD requires IFIND_REFRESH_TOKEN or IFIND_USERNAME/IFIND_PASSWORD env vars
     "data_vendors": {
-        # 核心行情数据：ifind(付费) > efinance(A股) > sina(港股) > akshare > yfinance
-        "core_stock_apis": "ifind,efinance,sina,akshare,yfinance",
-        # 技术指标：efinance(A股) > akshare > yfinance
+        # 核心行情数据：ifind(付费) > efinance(A股) > sina(港股) > akshare
+        # Note: yfinance removed because Yahoo Finance is blocked in mainland China
+        "core_stock_apis": "ifind,efinance,sina,akshare",
+        # 技术指标：efinance(A股) > akshare (港股)
         # Note: ifind does not support technical indicators, only financial indicators
-        "technical_indicators": "efinance,akshare,yfinance",
-        # 基本面数据：ifind(付费) > akshare(最全面) > yfinance
-        "fundamental_data": "ifind,akshare,yfinance",
-        # 新闻数据：akshare(东方财富中文新闻) > yfinance
-        "news_data": "akshare,yfinance",
+        # Note: yfinance removed because Yahoo Finance is blocked in mainland China
+        "technical_indicators": "efinance,akshare",
+        # 基本面数据：ifind(付费) > akshare(最全面)
+        # Note: yfinance removed because Yahoo Finance is blocked in mainland China
+        "fundamental_data": "ifind,akshare",
+        # 新闻数据：akshare(东方财富中文新闻)
+        # Note: yfinance removed because Yahoo Finance is blocked in mainland China
+        "news_data": "akshare",
         # 资金流向：仅ifind支持
         "capital_flow": "ifind",
     },

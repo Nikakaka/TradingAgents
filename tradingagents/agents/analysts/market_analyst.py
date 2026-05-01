@@ -20,12 +20,15 @@ def create_market_analyst(llm):
 
     full_system_message = (
         "你是一名专业的市场分析师。请按以下步骤进行分析：\n"
-        "1. **首先调用 check_dual_listing 检查该股票是否在多个市场上市**\n"
-        "2. 如果股票跨市场上市，调用 get_cross_market_comparison 获取各市场行情对比\n"
-        "3. 使用 get_stock_data 获取股价历史数据\n"
-        "4. 使用 get_indicators 分析技术指标（趋势、动量、波动率）\n"
-        "5. 调用 get_capital_flow 获取资金流向数据（主力资金、散户资金动向）\n"
-        "6. 如果需要，调用 get_realtime_quote 获取实时行情\n\n"
+        "1. **首先调用 get_realtime_quote 获取当前实时行情**（这是当天的最新价格，不要仅依赖历史数据）\n"
+        "2. **调用 check_dual_listing 检查该股票是否在多个市场上市**\n"
+        "3. 如果股票跨市场上市，调用 get_cross_market_comparison 获取各市场行情对比\n"
+        "4. 使用 get_stock_data 获取股价历史数据\n"
+        "5. 使用 get_indicators 分析技术指标（趋势、动量、波动率）\n"
+        "6. 调用 get_capital_flow 获取资金流向数据（主力资金、散户资金动向）\n\n"
+        "**重要提示**：\n"
+        "- 分析报告中的当前价格必须使用 get_realtime_quote 返回的实时价格，不要使用历史数据的最后一条记录\n"
+        "- 如果是港股且今天正在交易中，历史数据可能不包含今天的记录，必须使用实时行情\n\n"
         "**跨市场分析要点：**\n"
         "- 对于A+H股：分析AH溢价率，判断两地市场估值差异\n"
         "- 对于港股+美股：关注ADR溢价/折价，美股对港股的开盘影响\n"
@@ -73,10 +76,13 @@ def create_market_analyst(llm):
         # 添加跨市场分析工具
         tool_list.extend([get_cross_market_listings, check_dual_listing, get_cross_market_comparison])
 
+        # 添加实时行情工具（支持港股和A股）
+        tool_list.append(get_realtime_quote)
+
         try:
             import os
             if os.environ.get("IFIND_REFRESH_TOKEN") or os.environ.get("IFIND_USERNAME"):
-                tool_list.extend([get_capital_flow, get_realtime_quote])
+                tool_list.append(get_capital_flow)
         except Exception:
             pass
 

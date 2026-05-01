@@ -31,6 +31,9 @@ from .sina_finance import (
     get_stock_data as get_sina_hk_stock,
     get_hk_realtime_quote,
 )
+from .tencent_finance import (
+    get_hk_realtime_quote as get_tencent_hk_realtime_quote,
+)
 from .efinance_cn import (
     get_stock_data as get_efinance_cn_stock,
     get_indicator as get_efinance_cn_indicator,
@@ -53,7 +56,8 @@ TOOLS_CATEGORIES = {
     "core_stock_apis": {
         "description": "股票行情数据（开高低收成交量）",
         "tools": [
-            "get_stock_data"
+            "get_stock_data",
+            "get_realtime_quote",  # Real-time quotes
         ]
     },
     "technical_indicators": {
@@ -88,11 +92,11 @@ TOOLS_CATEGORIES = {
 }
 
 VENDOR_LIST = [
+    "tencent",   # 腾讯财经 - 港股实时行情（收盘价最准确）
     "ifind",     # 同花顺iFinD - 专业金融数据（付费，最全面）
     "efinance",  # EastMoney - A股数据（稳定、免费）
-    "sina",      # 新浪财经 - 港股实时行情（无速率限制）
+    "sina",      # 新浪财经 - 港股实时行情（备用）
     "akshare",   # AKShare - A股/港股数据（全面、免费）
-    "yfinance",  # Yahoo Finance - 通用数据（有速率限制）
 ]
 
 # Mapping of methods to their vendor-specific implementations
@@ -103,7 +107,12 @@ VENDOR_METHODS = {
         "efinance": get_efinance_cn_stock,  # A股 via EastMoney（稳定）
         "sina": get_sina_hk_stock,  # 港股实时数据（无速率限制）
         "akshare": [get_akshare_hk_stock, get_akshare_cn_stock],
-        "yfinance": get_YFin_data_online,
+    },
+    # Real-time quotes
+    "get_realtime_quote": {
+        "tencent": get_tencent_hk_realtime_quote,  # 腾讯港股实时行情（收盘价更准确）
+        "ifind": get_realtime_quote_ifind,
+        "sina": get_hk_realtime_quote,  # 新浪港股实时行情（备用）
     },
     # technical_indicators
     # Note: ifind does not have a technical indicators function, only financial indicators
@@ -112,37 +121,29 @@ VENDOR_METHODS = {
     "get_indicators": {
         "efinance": get_efinance_cn_indicator,  # A股 via EastMoney
         "akshare": [get_akshare_hk_indicator, get_akshare_cn_indicator],
-        "yfinance": get_stock_stats_indicators_window,
     },
     # fundamental_data
     "get_fundamentals": {
         "ifind": get_financial_indicators_ifind,
         "akshare": get_akshare_fundamentals,
-        "yfinance": get_yfinance_fundamentals,
     },
     "get_balance_sheet": {
         "akshare": get_akshare_balance_sheet,
-        "yfinance": get_yfinance_balance_sheet,
     },
     "get_cashflow": {
         "akshare": get_akshare_cashflow,
-        "yfinance": get_yfinance_cashflow,
     },
     "get_income_statement": {
         "akshare": get_akshare_income_statement,
-        "yfinance": get_yfinance_income_statement,
     },
     # news_data
     "get_news": {
         "akshare": get_news_akshare,  # 中文A股新闻（东方财富）
-        "yfinance": get_news_yfinance,
+        # Note: yfinance removed - blocked in mainland China
     },
     "get_global_news": {
         "akshare": get_global_news_akshare,  # 中文财经新闻（东方财富）
-        "yfinance": get_global_news_yfinance,
-    },
-    "get_insider_transactions": {
-        "yfinance": get_yfinance_insider_transactions,
+        # Note: yfinance removed - blocked in mainland China
     },
     # capital_flow
     "get_capital_flow": {
