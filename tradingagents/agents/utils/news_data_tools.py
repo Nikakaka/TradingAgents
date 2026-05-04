@@ -4,13 +4,14 @@ from tradingagents.dataflows.interface import route_to_vendor
 
 @tool
 def get_news(
-    ticker: Annotated[str, "股票代码"],
+    ticker: Annotated[str, "股票代码，必须使用标准代码格式（如 600519.SH、0700.HK），不要传入公司名称"],
     start_date: Annotated[str, "开始日期，格式：yyyy-mm-dd"],
     end_date: Annotated[str, "结束日期，格式：yyyy-mm-dd"],
 ) -> str:
     """
     获取与指定股票相关的新闻数据。
     适用于A股和港股的新闻分析。返回中文新闻为主。
+    重要：ticker 参数必须是标准股票代码（如 600519.SH、0700.HK），不支持公司名称。
     参数：
         ticker (str): 股票代码，如 600519.SH、0700.HK
         start_date (str): 开始日期，格式：yyyy-mm-dd

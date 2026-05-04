@@ -3,6 +3,7 @@ import os
 import re
 from typing import Any, Optional
 
+import httpx
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 from pydantic import PrivateAttr
@@ -116,6 +117,24 @@ def _is_rate_limit_error(error_text: str) -> bool:
     return any(pattern in normalized for pattern in patterns)
 
 
+def _is_timeout_error(error_text: str) -> bool:
+    """Check if error is a timeout-related issue (network stall, unresponsive provider)."""
+    normalized = (error_text or "").lower()
+    patterns = (
+        "timeout",
+        "timed out",
+        "connectiontimeout",
+        "readtimeout",
+        "connecttimeout",
+        "pooltimeout",
+        "connection reset",
+        "connection refused",
+        "broken pipe",
+        "connectionabortederror",
+    )
+    return any(pattern in normalized for pattern in patterns)
+
+
 def _is_prompt_parameter_error(error_text: str) -> bool:
     """Check if error is a prompt parameter issue (zhipu error 1213)."""
     normalized = (error_text or "")
@@ -179,11 +198,16 @@ class NormalizedChatOpenAI(ChatOpenAI):
             return normalize_content(super().invoke(input, config, **kwargs))
         except Exception as exc:
             error_text = str(exc)
-            if _is_rate_limit_error(error_text):
+            # Fallback on rate limit errors or timeout errors
+            if _is_rate_limit_error(error_text) or _is_timeout_error(error_text):
                 fallback_llm = self._get_fallback_llm()
                 if fallback_llm is not None:
-                    fallback_response = fallback_llm.invoke(input, config=config, **kwargs)
-                    return normalize_content(fallback_response)
+                    try:
+                        fallback_response = fallback_llm.invoke(input, config=config, **kwargs)
+                        return normalize_content(fallback_response)
+                    except Exception:
+                        # Fallback also failed — raise the original error
+                        pass
             if self._provider_name != "zhipu":
                 raise
             # Handle zhipu-specific errors: content filter (1301) or prompt parameter error (1213)
@@ -203,6 +227,7 @@ class NormalizedChatOpenAI(ChatOpenAI):
 _PASSTHROUGH_KWARGS = (
     "timeout", "max_retries", "reasoning_effort",
     "api_key", "callbacks", "http_client", "http_async_client",
+    "extra_body",
 )
 
 # Provider base URLs and API key env vars
@@ -268,6 +293,21 @@ class OpenAIClient(BaseLLMClient):
         # Set default max_retries if not specified
         if "max_retries" not in llm_kwargs:
             llm_kwargs["max_retries"] = self.kwargs.get("max_retries", 2)
+
+        # Create httpx client with connection timeout for OpenAI-compatible providers.
+        # This prevents the process from hanging when the provider's server accepts
+        # the TCP connection but never sends a response (e.g. network stall, proxy
+        # blocking, or provider-side issues).
+        if "http_client" not in llm_kwargs and self.provider != "ollama":
+            request_timeout = llm_kwargs.get("timeout", 300)
+            llm_kwargs["http_client"] = httpx.Client(
+                timeout=httpx.Timeout(
+                    connect=15.0,       # 15s to establish TCP connection
+                    read=request_timeout,  # same as request timeout
+                    write=30.0,         # 30s to send request body
+                    pool=15.0,          # 15s to acquire connection from pool
+                ),
+            )
 
         # Native OpenAI: use Responses API for consistent behavior across
         # all model families. Third-party providers use Chat Completions.

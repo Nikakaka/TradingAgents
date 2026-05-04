@@ -278,7 +278,19 @@ def main() -> int:
         config=config,
         debug=False,
     )
-    final_state, decision = graph.propagate(args.ticker, args.analysis_date)
+
+    try:
+        final_state, decision = graph.propagate(args.ticker, args.analysis_date)
+    except TimeoutError as exc:
+        # Graph execution timed out — write error result so batch runner can continue
+        error_result = {
+            "status": "error",
+            **summary,
+            "error": str(exc),
+        }
+        write_result_json(args.result_json, error_result)
+        print(json.dumps(error_result, ensure_ascii=False, indent=2), file=sys.stderr)
+        return 1
 
     # 直接保存中文报告，无需翻译
     report_file = save_report_to_disk(

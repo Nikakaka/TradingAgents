@@ -142,11 +142,11 @@ PROVIDER_SPECS = {
         "requires_api_key": True,
         "models": {
             "quick": ["deepseek-v3.2", "glm-5.1"],
-            "deep": ["glm-5.1", "deepseek-v3.2"],
+            "deep": ["deepseek-v3.2", "glm-5.1", "glm-4.7"],
         },
         "defaults": {
             "quick": "deepseek-v3.2",
-            "deep": "glm-5.1",
+            "deep": "deepseek-v3.2",
         },
     },
 }

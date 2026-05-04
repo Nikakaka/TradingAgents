@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -142,6 +143,12 @@ def ensure_result_json(task: dict[str, Any], index: int) -> Path:
     return result_path
 
 
+# Default per-task timeout in seconds (30 minutes).
+# A single stock analysis with depth=3 typically takes 10-20 minutes.
+# This prevents a stuck task from blocking the entire batch indefinitely.
+_PER_TASK_TIMEOUT = int(os.environ.get("TRADINGAGENTS_TASK_TIMEOUT", "1800"))
+
+
 def run_task(task: dict[str, Any], index: int, dry_run: bool) -> dict[str, Any]:
     result_path = ensure_result_json(task, index)
 
@@ -160,14 +167,37 @@ def run_task(task: dict[str, Any], index: int, dry_run: bool) -> dict[str, Any]:
         if dry_run:
             command.append("--dry-run")
 
-        completed = subprocess.run(
-            command,
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=_PER_TASK_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = (exc.stdout or "").strip() if exc.stdout else ""
+            stderr = (exc.stderr or "").strip() if exc.stderr else ""
+            ticker = task.get("ticker", f"task_{index + 1}")
+            timeout_msg = (
+                f"Task timed out after {_PER_TASK_TIMEOUT}s. "
+                f"This usually means the LLM API call hung (network stall or unresponsive provider)."
+            )
+            return {
+                "status": "error",
+                "ticker": task.get("ticker"),
+                "analysis_date": task.get("analysis_date"),
+                "provider": task.get("provider"),
+                "quick_model": task.get("quick_model"),
+                "deep_model": task.get("deep_model"),
+                "result_json": str(result_path),
+                "returncode": -1,
+                "error": timeout_msg,
+                "stdout": stdout,
+                "stderr": stderr,
+            }
 
     stdout = (completed.stdout or "").strip()
     stderr = (completed.stderr or "").strip()

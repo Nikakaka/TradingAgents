@@ -5,7 +5,10 @@ from tradingagents.model_registry import get_provider_defaults
 _TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
 
 _MODEL_DEFAULTS = get_provider_defaults()
-_FALLBACK_MODEL_DEFAULTS = get_provider_defaults("ollama")
+# Fallback uses the same provider (volces) but with a different model.
+# This avoids the overhead of calling Ollama, which requires a local server
+# and is much slower than just switching models on the same cloud provider.
+_FALLBACK_MODEL_DEFAULTS = get_provider_defaults("volces")
 
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
@@ -18,8 +21,8 @@ DEFAULT_CONFIG = {
     "backend_url": _MODEL_DEFAULTS["backend_url"],
     "rate_limit_fallback_enabled": True,
     "rate_limit_fallback_provider": _FALLBACK_MODEL_DEFAULTS["provider"],
-    "rate_limit_fallback_quick_think_llm": _FALLBACK_MODEL_DEFAULTS["quick_model"],
-    "rate_limit_fallback_deep_think_llm": _FALLBACK_MODEL_DEFAULTS["deep_model"],
+    "rate_limit_fallback_quick_think_llm": "deepseek-v3.2",  # Fallback quick model (same provider)
+    "rate_limit_fallback_deep_think_llm": "glm-4.7",         # Fallback deep model (same provider, with thinking enabled)
     "rate_limit_fallback_backend_url": _FALLBACK_MODEL_DEFAULTS["backend_url"],
     # Provider-specific thinking configuration
     "google_thinking_level": None,      # "high", "minimal", etc.
@@ -35,6 +38,11 @@ DEFAULT_CONFIG = {
     # OpenAI-compatible API timeout (for JD, OpenAI, xAI, etc.)
     "openai_timeout": 300,  # 5 minutes per request
     "openai_max_retries": 2,
+    # Volces (火山引擎) deep model thinking configuration
+    # When True, deep model (e.g. deepseek-v3.2) will have enable_thinking=True
+    # in the API request, which activates the model's deep reasoning mode.
+    # Quick model always runs without thinking for speed.
+    "volces_deep_enable_thinking": True,
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,

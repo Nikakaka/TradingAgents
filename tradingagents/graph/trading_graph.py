@@ -1,6 +1,7 @@
 # TradingAgents/graph/trading_graph.py
 
 import os
+import signal
 from pathlib import Path
 import json
 from datetime import date
@@ -86,6 +87,14 @@ class TradingAgentsGraph:
             if fallback_kwargs:
                 fallback_kwargs["callbacks"] = self.callbacks
 
+        # Deep model: enable thinking mode for volces (e.g. deepseek-v3.2 with enable_thinking=True)
+        deep_llm_kwargs = dict(llm_kwargs)
+        deep_fallback_kwargs = dict(fallback_kwargs) if fallback_kwargs else {}
+        if self.config.get("volces_deep_enable_thinking") and self.config["llm_provider"] == "volces":
+            deep_llm_kwargs["extra_body"] = {"enable_thinking": True}
+        if self.config.get("volces_deep_enable_thinking") and fallback_enabled and fallback_provider == "volces":
+            deep_fallback_kwargs["extra_body"] = {"enable_thinking": True}
+
         deep_client = create_llm_client(
             provider=self.config["llm_provider"],
             model=self.config["deep_think_llm"],
@@ -93,8 +102,8 @@ class TradingAgentsGraph:
             fallback_provider=fallback_provider if fallback_enabled else None,
             fallback_model=fallback_deep_model if fallback_enabled else None,
             fallback_base_url=fallback_backend_url if fallback_enabled else None,
-            fallback_kwargs=fallback_kwargs if fallback_enabled else None,
-            **llm_kwargs,
+            fallback_kwargs=deep_fallback_kwargs if fallback_enabled else None,
+            **deep_llm_kwargs,
         )
         quick_client = create_llm_client(
             provider=self.config["llm_provider"],
@@ -229,9 +238,17 @@ class TradingAgentsGraph:
         }
 
     def propagate(self, company_name, trade_date):
-        """Run the trading agents graph for a company on a specific date."""
+        """Run the trading agents graph for a company on a specific date.
+
+        Includes a per-stock timeout (default 20 minutes, configurable via
+        TRADINGAGENTS_STOCK_TIMEOUT env var) to prevent a single stuck
+        LLM API call from blocking the entire batch indefinitely.
+        """
 
         self.ticker = company_name
+
+        # Per-stock timeout: prevents hanging on unresponsive LLM APIs
+        stock_timeout = int(os.environ.get("TRADINGAGENTS_STOCK_TIMEOUT", "1200"))
 
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
@@ -251,8 +268,8 @@ class TradingAgentsGraph:
 
             final_state = trace[-1]
         else:
-            # Standard mode without tracing
-            final_state = self.graph.invoke(init_agent_state, **args)
+            # Standard mode with timeout protection
+            final_state = self._invoke_with_timeout(init_agent_state, args, stock_timeout)
 
         # Store current state for reflection
         self.curr_state = final_state
@@ -262,6 +279,41 @@ class TradingAgentsGraph:
 
         # Return decision and processed signal
         return final_state, self.process_signal(final_state["final_trade_decision"])
+
+    def _invoke_with_timeout(self, init_agent_state: dict, args: dict, timeout_seconds: int) -> dict:
+        """Invoke the graph with a timeout to prevent hanging.
+
+        Uses a threading-based approach since signal.alarm is not available on Windows.
+        If the graph execution exceeds timeout_seconds, raises a TimeoutError.
+        """
+        import threading
+
+        result_holder: dict[str, Any] = {"result": None, "error": None}
+        thread_started = threading.Event()
+
+        def _run_graph():
+            try:
+                result_holder["result"] = self.graph.invoke(init_agent_state, **args)
+            except Exception as exc:
+                result_holder["error"] = exc
+            finally:
+                thread_started.set()
+
+        worker = threading.Thread(target=_run_graph, daemon=True)
+        worker.start()
+
+        # Wait for the thread to complete or timeout
+        if not thread_started.wait(timeout=timeout_seconds):
+            raise TimeoutError(
+                f"Graph execution for {self.ticker} timed out after {timeout_seconds}s. "
+                f"This usually means the LLM API call hung (network stall or unresponsive provider). "
+                f"Consider checking: 1) API connectivity, 2) proxy settings, 3) provider status."
+            )
+
+        if result_holder["error"] is not None:
+            raise result_holder["error"]
+
+        return result_holder["result"]
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""
