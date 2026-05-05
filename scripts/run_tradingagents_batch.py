@@ -713,10 +713,36 @@ def find_previous_report(item: dict[str, Any]) -> tuple[str | None, str | None]:
     if not candidates:
         return None, None
 
+    # Sort by timestamp embedded in directory name (e.g. 002466.SZ_20260505_181129)
+    # Use modification time as fallback
     previous_dir = sorted(candidates, key=lambda path: path.name)[-1]
 
-    decision_file = previous_dir / "5_portfolio" / "decision.md"
-    previous_decision = extract_decision_from_text(read_text_if_exists(decision_file))
+    # Try to extract decision from multiple possible locations:
+    # 1. Chinese path: 5_投资组合/最终决策.md
+    # 2. English path: 5_portfolio/decision.md (legacy)
+    # 3. Fallback: complete_report.md
+    decision_candidates = [
+        previous_dir / "5_投资组合" / "最终决策.md",
+        previous_dir / "5_portfolio" / "decision.md",
+    ]
+    previous_decision = None
+    for decision_file in decision_candidates:
+        previous_decision = extract_decision_from_text(read_text_if_exists(decision_file))
+        if previous_decision:
+            break
+
+    # If no dedicated decision file found, try extracting from the complete report
+    if not previous_decision:
+        report_candidates = [
+            previous_dir / "complete_report.md",
+            previous_dir / "complete_report_zh.md",
+        ]
+        for report_file in report_candidates:
+            report_text = read_text_if_exists(report_file)
+            if report_text:
+                previous_decision = extract_decision_from_text(report_text)
+                if previous_decision:
+                    break
 
     previous_report = previous_dir / "complete_report_zh.md"
     if not previous_report.exists():
