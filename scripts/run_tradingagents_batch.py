@@ -674,8 +674,8 @@ def preferred_report_path(item: dict[str, Any]) -> Path | None:
     """Get the preferred report file path.
 
     Priority:
-    1. report_file (complete_report.md) - now outputs Chinese directly
-    2. translated_report_file (legacy, for backwards compatibility)
+    1. report_file (complete_report.md) - outputs Chinese directly
+    2. translated_report_file (legacy, pre-April 2026 reports)
     """
     # Check report_file first (now outputs Chinese directly)
     report_file = item.get("report_file")
@@ -684,7 +684,7 @@ def preferred_report_path(item: dict[str, Any]) -> Path | None:
         if path.exists():
             return path
 
-    # Fallback to translated_report_file for legacy reports
+    # Fallback to translated_report_file for legacy reports (pre-April 2026)
     translated_file = item.get("translated_report_file")
     if translated_file:
         path = Path(translated_file)
@@ -744,9 +744,11 @@ def find_previous_report(item: dict[str, Any]) -> tuple[str | None, str | None]:
                 if previous_decision:
                     break
 
-    previous_report = previous_dir / "complete_report_zh.md"
+    # Find the complete report file (current reports use complete_report.md with Chinese content,
+    # legacy reports used complete_report_zh.md for the translated version)
+    previous_report = previous_dir / "complete_report.md"
     if not previous_report.exists():
-        previous_report = previous_dir / "complete_report.md"
+        previous_report = previous_dir / "complete_report_zh.md"
     if not previous_report.exists():
         return previous_decision, None
 
@@ -911,8 +913,6 @@ def build_markdown_summary(items: list[dict[str, Any]], batch_file: str) -> str:
                 lines.append(f"- \u62a5\u544a\u6458\u8981\uff1a{item['report_summary']}")
             if item.get("preferred_report_file"):
                 lines.append(f"- \u5f53\u524d\u62a5\u544a\uff1a`{item['preferred_report_file']}`")
-            if item.get("translated_report_file") and item.get("report_file"):
-                lines.append(f"- \u82f1\u6587\u62a5\u544a\uff1a`{item['report_file']}`")
             if item.get("error"):
                 lines.append(f"- \u9519\u8bef\u4fe1\u606f\uff1a{str(item['error']).strip()}")
             lines.append("")
