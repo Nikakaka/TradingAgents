@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import gc
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +99,13 @@ def parse_args() -> argparse.Namespace:
         "--regenerate-summary",
         action="store_true",
         help="Regenerate batch summary from existing result files without running analysis.",
+    )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        help="Number of stocks to analyze in parallel. Default 1 (sequential). "
+             "Use 2-4 for faster batch completion on multi-core machines.",
     )
     return parser.parse_args()
 
@@ -984,6 +992,68 @@ def regenerate_summary_from_existing_results(
     return results
 
 
+def _run_sequential(tasks, args, results):
+    """Run tasks sequentially (original behavior)."""
+    for index, task in enumerate(tasks):
+        ticker = task.get("ticker") or f"task_{index + 1}"
+        print(f"[batch] starting {index + 1}/{len(tasks)}: {ticker}", flush=True)
+        result = run_task_with_retries(
+            task, index, args.dry_run, args.retry_on_rate_limit,
+            max(args.max_rate_limit_retries, 0), max(args.retry_backoff_seconds, 1),
+        )
+        results.append(result)
+        print(f"[batch] finished {ticker} with status={result.get('status')} attempt={result.get('attempt', 1)}", flush=True)
+        _write_incremental_summary(results, args.batch_file, args.dry_run, len(tasks), args.result_json, args.result_markdown)
+        if args.stop_on_error and result.get("status") == "error":
+            break
+        if not args.dry_run and index < len(tasks) - 1 and args.inter_task_delay_seconds > 0:
+            print(f"[batch] sleeping {args.inter_task_delay_seconds}s before next task", flush=True)
+            time.sleep(args.inter_task_delay_seconds)
+
+
+def _run_parallel(tasks, args, results, max_workers: int):
+    """Run tasks in parallel using a thread pool.
+
+    Each task spawns an independent subprocess, so threads are safe here.
+    Results are collected in task order and written incrementally.
+    """
+    print(f"[batch] running {len(tasks)} tasks with {max_workers} parallel workers", flush=True)
+
+    # Pre-allocate result slots to preserve order
+    result_slots: list[dict[str, Any] | None] = [None] * len(tasks)
+
+    def _worker(index: int, task: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        ticker = task.get("ticker") or f"task_{index + 1}"
+        print(f"[batch] starting {index + 1}/{len(tasks)}: {ticker}", flush=True)
+        result = run_task_with_retries(
+            task, index, args.dry_run, args.retry_on_rate_limit,
+            max(args.max_rate_limit_retries, 0), max(args.retry_backoff_seconds, 1),
+        )
+        print(f"[batch] finished {ticker} with status={result.get('status')} attempt={result.get('attempt', 1)}", flush=True)
+        return index, result
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_worker, index, task): index
+            for index, task in enumerate(tasks)
+        }
+        for future in as_completed(futures):
+            index, result = future.result()
+            result_slots[index] = result
+
+            # Build incremental results from completed slots
+            completed = [r for r in result_slots if r is not None]
+            _write_incremental_summary(
+                completed, args.batch_file, args.dry_run, len(tasks),
+                args.result_json, args.result_markdown,
+            )
+
+    # Collect in order
+    for slot in result_slots:
+        if slot is not None:
+            results.append(slot)
+
+
 def main() -> int:
     args = parse_args()
     tasks = load_batch_file(args.batch_file)
@@ -993,51 +1063,10 @@ def main() -> int:
     if args.regenerate_summary:
         print("[batch] regenerating summary from existing result files", flush=True)
         results = regenerate_summary_from_existing_results(tasks)
+    elif args.parallel and args.parallel > 1:
+        _run_parallel(tasks, args, results, args.parallel)
     else:
-        # Normal mode: run analysis for each task
-        for index, task in enumerate(tasks):
-            ticker = task.get("ticker") or f"task_{index + 1}"
-            print(
-                f"[batch] starting {index + 1}/{len(tasks)}: {ticker}",
-                flush=True,
-            )
-            result = run_task_with_retries(
-                task,
-                index,
-                args.dry_run,
-                args.retry_on_rate_limit,
-                max(args.max_rate_limit_retries, 0),
-                max(args.retry_backoff_seconds, 1),
-            )
-            results.append(result)
-            print(
-                f"[batch] finished {ticker} with status={result.get('status')} attempt={result.get('attempt', 1)}",
-                flush=True,
-            )
-
-            # Write incremental summary after each task so partial progress
-            # is saved even if the process is killed mid-batch
-            _write_incremental_summary(
-                results,
-                args.batch_file,
-                args.dry_run,
-                len(tasks),
-                args.result_json,
-                args.result_markdown,
-            )
-
-            if args.stop_on_error and result.get("status") == "error":
-                break
-            if (
-                not args.dry_run
-                and index < len(tasks) - 1
-                and args.inter_task_delay_seconds > 0
-            ):
-                print(
-                    f"[batch] sleeping {args.inter_task_delay_seconds}s before next task",
-                    flush=True,
-                )
-                time.sleep(args.inter_task_delay_seconds)
+        _run_sequential(tasks, args, results)
 
     enriched_results = enrich_results(results)
     summary = {

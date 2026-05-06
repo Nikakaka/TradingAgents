@@ -45,12 +45,14 @@ if "%TASK_TYPE%"=="morning" (
     set "TASK_NAME=Morning Quick Analysis"
     set "GLOBAL_TIMEOUT=3600"
     set "PER_TASK_TIMEOUT=1200"
+    set "PARALLEL=3"
 ) else if "%TASK_TYPE%"=="evening" (
     set "DEPTH=3"
     set "TASK_FILE=openclaw\tasks\positions_evening.json"
     set "TASK_NAME=Evening Deep Analysis"
     set "GLOBAL_TIMEOUT=21600"
     set "PER_TASK_TIMEOUT=3600"
+    set "PARALLEL=2"
 ) else (
     echo [ERROR] Unknown task type: %TASK_TYPE%
     echo Usage: run_scheduled_job.cmd ^<morning^|evening^>
@@ -64,6 +66,7 @@ echo Depth: %DEPTH%
 echo Positions Dir: %POSITIONS_DIR%
 echo Global Timeout: %GLOBAL_TIMEOUT% seconds
 echo Per-Task Timeout: %PER_TASK_TIMEOUT% seconds
+echo Parallel Workers: %PARALLEL%
 echo ============================================================
 echo.
 
@@ -94,7 +97,7 @@ set "RESULT_MD=%SCRIPT_DIR%results\openclaw\report_%TIMESTAMP%.md"
 echo Result JSON: %RESULT_JSON% >> "%PROGRESS_FILE%"
 
 set "TRADINGAGENTS_TASK_TIMEOUT=%PER_TASK_TIMEOUT%"
-"%PYTHON_EXE%" "%SCRIPT_DIR%scripts\run_tradingagents_batch.py" "%SCRIPT_DIR%%TASK_FILE%" --result-json "%RESULT_JSON%" --result-markdown "%RESULT_MD%"
+"%PYTHON_EXE%" "%SCRIPT_DIR%scripts\run_tradingagents_batch.py" "%SCRIPT_DIR%%TASK_FILE%" --result-json "%RESULT_JSON%" --result-markdown "%RESULT_MD%" --parallel %PARALLEL%
 set "BATCH_EXIT_CODE=%errorlevel%"
 echo Step 2 done at %DATE% %TIME% exit_code=%BATCH_EXIT_CODE% >> "%PROGRESS_FILE%"
 echo.
