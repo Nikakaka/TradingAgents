@@ -131,8 +131,8 @@ def _calculate_sentiment_score(
         # Sell signals should stay in 5-50 range
         final_score = max(5, min(50, raw_score))
     else:  # hold
-        # Hold signals should stay in 35-65 range
-        final_score = max(35, min(65, raw_score))
+        # Hold signals should stay in 20-80 range
+        final_score = max(20, min(80, raw_score))
 
     return int(final_score)
 
@@ -193,8 +193,8 @@ def _extract_risk_factors(history: str) -> dict:
     history_lower = history.lower()
 
     # Count severity mentions (each keyword at most once)
-    high_keywords = ["高风险", "重大风险", "严重", "critical", "重大隐患", "重大利空"]
-    medium_keywords = ["中等风险", "需关注", "风险提示", "谨慎", "不确定性"]
+    high_keywords = ["高风险", "重大风险", "重大隐患", "重大利空"]
+    medium_keywords = ["中等风险", "风险提示"]
 
     # Count unique occurrences of each severity level
     for kw in high_keywords:
@@ -217,7 +217,7 @@ def _extract_risk_factors(history: str) -> dict:
     if any(kw in history for kw in ["债务", "负债率", "偿债能力", "财务杠杆"]):
         risk_factors["debt_risk"] = True
 
-    if any(kw in history for kw in ["治理", "内控", "违规", "处罚", "诉讼"]):
+    if any(kw in history for kw in ["内控缺陷", "违规", "处罚", "诉讼", "治理问题", "治理缺陷"]):
         risk_factors["governance_issue"] = True
 
     return risk_factors
