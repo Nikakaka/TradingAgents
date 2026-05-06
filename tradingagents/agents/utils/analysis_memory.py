@@ -215,11 +215,11 @@ class AnalysisMemory:
         # Threshold for "flat" movement (±2%)
         flat_threshold = 0.02
 
-        if signal == "buy":
-            # Buy signal correct if price went up
+        if signal in ("buy", "overweight"):
+            # Buy/overweight signal correct if price went up
             return outcome > flat_threshold
-        elif signal == "sell":
-            # Sell signal correct if price went down
+        elif signal in ("sell", "underweight"):
+            # Sell/underweight signal correct if price went down
             return outcome < -flat_threshold
         else:  # hold
             # Hold signal correct if price stayed relatively flat
@@ -263,9 +263,9 @@ class AnalysisMemory:
         correct_count = sum(1 for r in with_outcomes if r.was_correct)
         accuracy = correct_count / len(with_outcomes)
 
-        # Calculate per-signal accuracy
-        buy_records = [r for r in with_outcomes if r.signal == "buy"]
-        sell_records = [r for r in with_outcomes if r.signal == "sell"]
+        # Calculate per-signal accuracy (group overweight with buy, underweight with sell)
+        buy_records = [r for r in with_outcomes if r.signal in ("buy", "overweight")]
+        sell_records = [r for r in with_outcomes if r.signal in ("sell", "underweight")]
         hold_records = [r for r in with_outcomes if r.signal == "hold"]
 
         buy_accuracy = (
@@ -348,7 +348,7 @@ class AnalysisMemory:
         correct = sum(1 for r in self._records if r.was_correct is True)
 
         by_signal = {}
-        for signal in ["buy", "hold", "sell"]:
+        for signal in ["buy", "overweight", "hold", "underweight", "sell"]:
             records = [r for r in self._records if r.signal == signal]
             with_out = [r for r in records if r.was_correct is not None]
             by_signal[signal] = {

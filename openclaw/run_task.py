@@ -135,12 +135,16 @@ def build_notification_content(positions_info: dict, results: dict, research_dep
     ]
 
     # Summary counts
-    counts = {"buy": 0, "hold": 0, "sell": 0, "other": 0, "failed": 0}
+    counts = {"buy": 0, "overweight": 0, "hold": 0, "underweight": 0, "sell": 0, "other": 0, "failed": 0}
     if "results" in results:
         for item in results["results"]:
             decision = str(item.get("decision", "")).upper()
-            if "BUY" in decision:
+            if "OVERWEIGHT" in decision:
+                counts["overweight"] += 1
+            elif "BUY" in decision:
                 counts["buy"] += 1
+            elif "UNDERWEIGHT" in decision:
+                counts["underweight"] += 1
             elif "SELL" in decision:
                 counts["sell"] += 1
             elif "HOLD" in decision:
@@ -153,7 +157,9 @@ def build_notification_content(positions_info: dict, results: dict, research_dep
     lines.extend([
         "**分析结果**:",
         f"- 买入建议: {counts['buy']} 只",
+        f"- 增持建议: {counts['overweight']} 只",
         f"- 持有建议: {counts['hold']} 只",
+        f"- 减持建议: {counts['underweight']} 只",
         f"- 卖出建议: {counts['sell']} 只",
         "",
     ])
@@ -175,8 +181,12 @@ def build_notification_content(positions_info: dict, results: dict, research_dep
             for item in results["results"]:
                 ticker = item.get("ticker", "")
                 decision = str(item.get("decision", "")).upper()
-                if "BUY" in decision:
+                if "OVERWEIGHT" in decision:
+                    decision_map[ticker] = "增持"
+                elif "BUY" in decision:
                     decision_map[ticker] = "买入"
+                elif "UNDERWEIGHT" in decision:
+                    decision_map[ticker] = "减持"
                 elif "SELL" in decision:
                     decision_map[ticker] = "卖出"
                 elif "HOLD" in decision:
@@ -255,16 +265,33 @@ def run_task(task_name: str, research_depth: int, force: bool = False, no_notify
     result_json.parent.mkdir(parents=True, exist_ok=True)
 
     batch_script = REPO_ROOT / "scripts" / "run_tradingagents_batch.py"
+    parallel = 3 if research_depth <= 1 else 2
+    per_task_timeout = 1200 if research_depth <= 1 else 3600
     batch_cmd = [
         sys.executable,
         str(batch_script),
         str(task_file),
         "--result-json", str(result_json),
         "--result-markdown", str(result_md),
+        "--parallel", str(parallel),
     ]
 
     print(f"[INFO] Running: {' '.join(batch_cmd)}")
-    result = subprocess.run(batch_cmd, cwd=str(REPO_ROOT))
+    print(f"[INFO] Parallel workers: {parallel}, Per-task timeout: {per_task_timeout}s")
+
+    env = os.environ.copy()
+    env["TRADINGAGENTS_TASK_TIMEOUT"] = str(per_task_timeout)
+
+    try:
+        result = subprocess.run(
+            batch_cmd,
+            cwd=str(REPO_ROOT),
+            timeout=per_task_timeout * len(tasks) + 600,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"[ERROR] Batch analysis timed out")
+        return 1
 
     if result.returncode != 0:
         print(f"[ERROR] Batch analysis failed with code {result.returncode}")

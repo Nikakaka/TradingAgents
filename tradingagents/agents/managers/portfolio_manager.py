@@ -80,7 +80,9 @@ def _calculate_sentiment_score(
     # === 1. Base Score from Signal (40% weight) ===
     signal_scores = {
         "buy": 75,    # Base bullish score
+        "overweight": 65,  # Moderately bullish
         "hold": 50,   # Neutral
+        "underweight": 35,  # Moderately bearish
         "sell": 25,   # Base bearish score
     }
     base_score = signal_scores.get(signal, 50)
@@ -88,12 +90,12 @@ def _calculate_sentiment_score(
     # === 2. Confidence Adjustment (20% weight) ===
     # Confidence modulates the score towards extremes
     # High confidence pushes buy higher, sell lower
-    if signal == "buy":
+    if signal in ("buy", "overweight"):
         confidence_adjustment = (confidence - 0.5) * 30  # -15 to +15
-    elif signal == "sell":
+    elif signal in ("sell", "underweight"):
         confidence_adjustment = -(confidence - 0.5) * 30  # -15 to +15 (inverse for sell)
     else:  # hold
-        confidence_adjustment = (confidence - 0.5) * 10  # -5 to +5
+        confidence_adjustment = (confidence - 0.5) * 20  # -10 to +10
 
     # === 3. Risk Factor Penalties (25% weight) ===
     risk_penalty = 0
@@ -127,9 +129,15 @@ def _calculate_sentiment_score(
     if signal == "buy":
         # Buy signals should stay in 50-95 range
         final_score = max(50, min(95, raw_score))
+    elif signal == "overweight":
+        # Overweight signals should stay in 45-90 range
+        final_score = max(45, min(90, raw_score))
     elif signal == "sell":
         # Sell signals should stay in 5-50 range
         final_score = max(5, min(50, raw_score))
+    elif signal == "underweight":
+        # Underweight signals should stay in 10-55 range
+        final_score = max(10, min(55, raw_score))
     else:  # hold
         # Hold signals should stay in 20-80 range
         final_score = max(20, min(80, raw_score))
@@ -233,6 +241,8 @@ def _get_score_label(score: int) -> str:
         return "中性"
     elif score >= 20:
         return "偏空"
+    elif score >= 10:
+        return "看空"
     else:
         return "强烈看空"
 
@@ -241,7 +251,7 @@ def _extract_signal_and_confidence(content: str) -> tuple:
     """Extract trading signal and confidence from portfolio manager response.
 
     Returns:
-        Tuple of (signal, confidence) where signal is one of buy/hold/sell
+        Tuple of (signal, confidence) where signal is one of buy/overweight/hold/underweight/sell
         and confidence is a float between 0 and 1.
     """
     if not content:
@@ -260,20 +270,24 @@ def _extract_signal_and_confidence(content: str) -> tuple:
 
         if "买入" in rating_line:
             signal = "buy"
+        elif "超配" in rating_line:
+            signal = "overweight"
         elif "卖出" in rating_line:
             signal = "sell"
+        elif "低配" in rating_line:
+            signal = "underweight"
         elif "持有" in rating_line or "观望" in rating_line:
             signal = "hold"
-        elif "超配" in rating_line:
-            signal = "buy"  # Treat overweight as buy signal
-        elif "低配" in rating_line:
-            signal = "sell"  # Treat underweight as sell signal
     else:
         # Fallback: look for signal keywords anywhere
         if "买入" in content_lower:
             signal = "buy"
+        elif "超配" in content_lower:
+            signal = "overweight"
         elif "卖出" in content_lower:
             signal = "sell"
+        elif "低配" in content_lower:
+            signal = "underweight"
 
     # Extract or estimate confidence
     confidence = 0.5
@@ -518,6 +532,15 @@ def create_portfolio_manager(llm, memory):
 
         risk_text = "、".join(risk_summary) if risk_summary else "无明显风险"
 
+        signal_labels = {
+            "buy": "买入",
+            "overweight": "超配",
+            "hold": "持有",
+            "underweight": "低配",
+            "sell": "卖出",
+        }
+        signal_label = signal_labels.get(signal, signal.upper())
+
         score_section = f"""
 
 ---
@@ -528,7 +551,7 @@ def create_portfolio_manager(llm, memory):
 |------|------|
 | **情绪评分** | {sentiment_score}/100 |
 | **评分解读** | {score_label} |
-| **信号类型** | {signal.upper()} |
+| **信号类型** | {signal_label} |
 | **置信度** | {confidence:.0%} |
 | **风险因素** | {risk_text} |
 
