@@ -1014,6 +1014,18 @@ def main() -> int:
                 f"[batch] finished {ticker} with status={result.get('status')} attempt={result.get('attempt', 1)}",
                 flush=True,
             )
+
+            # Write incremental summary after each task so partial progress
+            # is saved even if the process is killed mid-batch
+            _write_incremental_summary(
+                results,
+                args.batch_file,
+                args.dry_run,
+                len(tasks),
+                args.result_json,
+                args.result_markdown,
+            )
+
             if args.stop_on_error and result.get("status") == "error":
                 break
             if (
@@ -1045,6 +1057,40 @@ def main() -> int:
         write_text_output(args.result_markdown, markdown, encoding="utf-8-sig")
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0 if summary["status"] == "ok" else 1
+
+
+def _write_incremental_summary(
+    results: list[dict[str, Any]],
+    batch_file: str,
+    dry_run: bool,
+    total_tasks: int,
+    result_json_path: str | None,
+    result_markdown_path: str | None,
+) -> None:
+    """Write incremental batch summary after each task completes.
+
+    This ensures partial progress is saved even if the process is killed
+    mid-batch (e.g. by OpenClaw timeout). The final summary is still
+    written at the end of main(), but this provides a checkpoint after
+    each stock.
+    """
+    enriched = enrich_results(results)
+    summary = {
+        "status": "partial" if len(results) < total_tasks else ("ok" if all(item.get("status") != "error" for item in results) else "partial_error"),
+        "batch_file": str(resolve_path(batch_file)),
+        "dry_run": dry_run,
+        "task_count": total_tasks,
+        "completed_count": len(results),
+        "counts": summary_counts(enriched),
+        "results": enriched,
+    }
+
+    write_text_output(result_json_path, json.dumps(summary, ensure_ascii=False, indent=2))
+
+    if result_markdown_path:
+        markdown = build_markdown_summary(enriched, summary["batch_file"])
+        write_text_output(result_markdown_path, markdown, encoding="utf-8-sig")
     return 0 if summary["status"] == "ok" else 1
 
 
