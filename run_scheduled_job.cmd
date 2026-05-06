@@ -97,6 +97,7 @@ set "RESULT_MD=%SCRIPT_DIR%results\openclaw\report_%TIMESTAMP%.md"
 echo Result JSON: %RESULT_JSON% >> "%PROGRESS_FILE%"
 
 set "TRADINGAGENTS_TASK_TIMEOUT=%PER_TASK_TIMEOUT%"
+set "TRADINGAGENTS_PROGRESS_FILE=%PROGRESS_FILE%"
 "%PYTHON_EXE%" "%SCRIPT_DIR%scripts\run_tradingagents_batch.py" "%SCRIPT_DIR%%TASK_FILE%" --result-json "%RESULT_JSON%" --result-markdown "%RESULT_MD%" --parallel %PARALLEL%
 set "BATCH_EXIT_CODE=%errorlevel%"
 echo Step 2 done at %DATE% %TIME% exit_code=%BATCH_EXIT_CODE% >> "%PROGRESS_FILE%"

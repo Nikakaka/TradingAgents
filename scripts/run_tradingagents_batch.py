@@ -1120,6 +1120,18 @@ def _write_incremental_summary(
     if result_markdown_path:
         markdown = build_markdown_summary(enriched, summary["batch_file"])
         write_text_output(result_markdown_path, markdown, encoding="utf-8-sig")
+
+    # Update progress marker file so OpenClaw agent can see the batch is still running
+    progress_file = os.environ.get("TRADINGAGENTS_PROGRESS_FILE")
+    if progress_file:
+        try:
+            from datetime import datetime
+            now_str = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+            with open(progress_file, "a", encoding="utf-8") as pf:
+                pf.write(f"Step 2 progress: {len(results)}/{total_tasks} stocks completed at {now_str}\n")
+        except Exception:
+            pass  # Progress file is optional, don't fail on write errors
+
     return 0 if summary["status"] == "ok" else 1
 
 
