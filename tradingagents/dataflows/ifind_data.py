@@ -140,8 +140,14 @@ class IFindClient:
             time.sleep(0.1 - elapsed)
         self._last_request_time = time.time()
 
-    def _http_request(self, endpoint: str, params: dict) -> dict:
-        """发送HTTP请求"""
+    def _http_request(self, endpoint: str, params: dict, max_retries: int = 2) -> dict:
+        """发送HTTP请求，支持对瞬态错误的重试
+
+        Args:
+            endpoint: API端点
+            params: 请求参数
+            max_retries: 瞬态错误的最大重试次数（不含首次请求）
+        """
         self._rate_limit()
 
         if not self.access_token:
@@ -153,16 +159,34 @@ class IFindClient:
             "access_token": self.access_token
         }
 
-        response = requests.post(url, headers=headers, json=params, timeout=30)
+        last_exception = None
+        for attempt in range(1 + max_retries):
+            try:
+                response = requests.post(url, headers=headers, json=params, timeout=30)
 
-        if response.status_code == 401:
-            # Token过期，重新获取
-            self._get_access_token()
-            headers["access_token"] = self.access_token
-            response = requests.post(url, headers=headers, json=params, timeout=30)
+                if response.status_code == 401:
+                    # Token过期，重新获取
+                    self._get_access_token()
+                    headers["access_token"] = self.access_token
+                    response = requests.post(url, headers=headers, json=params, timeout=30)
 
-        response.raise_for_status()
-        return response.json()
+                response.raise_for_status()
+                return response.json()
+
+            except (requests.ConnectionError, requests.Timeout) as e:
+                last_exception = e
+                if attempt < max_retries:
+                    wait = 1.0 * (attempt + 1)  # 2s, 3s backoff
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        f"[iFinD] {endpoint} 瞬态错误 ({type(e).__name__}), "
+                        f"重试 {attempt + 1}/{max_retries} (等待{wait:.0f}s)..."
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+
+        raise last_exception  # Should not reach here, but just in case
 
     def _sdk_login(self) -> bool:
         """SDK登录"""

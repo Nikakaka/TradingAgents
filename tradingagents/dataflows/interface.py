@@ -329,7 +329,7 @@ def _build_fallback_chain(
 
     # Stock-type specific preferences
     type_preferences = {
-        "cn_a": ["efinance", "akshare", "sina", "ifind", "yfinance"],
+        "cn_a": ["efinance", "akshare", "sina", "yfinance", "ifind"],
         "hk": ["sina", "akshare", "yfinance", "ifind"],
         "us": ["yfinance", "alpha_vantage"],
         "cn_b": ["akshare", "yfinance"],

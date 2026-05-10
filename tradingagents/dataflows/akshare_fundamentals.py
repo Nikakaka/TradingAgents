@@ -78,67 +78,93 @@ def get_fundamentals(ticker: str, curr_date: str = None) -> str:
 
     if info.market == "cn_a":
         symbol = _require_cn_a(ticker)
-        profile = ak.stock_individual_info_em(symbol=symbol)
-        metrics = ak.stock_financial_abstract_ths(symbol=symbol, indicator="按报告期")
-
         lines = []
-        if profile is not None and not profile.empty:
-            for _, row in profile.iterrows():
-                lines.append(f"{row['item']}: {row['value']}")
+        errors = []
 
-        if metrics is not None and not metrics.empty:
-            latest = metrics.iloc[-1]
-            lines.append("")
-            lines.append("Latest key financial metrics:")
-            for col in [
-                "报告期",
-                "净利润",
-                "净利润同比增长率",
-                "扣非净利润",
-                "营业总收入",
-                "营业总收入同比增长率",
-                "基本每股收益",
-                "每股净资产",
-                "每股经营现金流",
-                "销售净利率",
-                "销售毛利率",
-                "净资产收益率",
-                "资产负债率",
-            ]:
-                if col in latest.index:
-                    lines.append(f"{col}: {_safe_numeric_value(latest[col])}")
+        # Profile data (stock_individual_info_em) - isolated exception handling
+        try:
+            profile = ak.stock_individual_info_em(symbol=symbol)
+            if profile is not None and not profile.empty:
+                for _, row in profile.iterrows():
+                    lines.append(f"{row['item']}: {row['value']}")
+        except Exception as e:
+            errors.append(f"公司信息获取失败: {type(e).__name__}: {e}")
 
-            lines.append("")
-            lines.append("Recent financial abstract:")
-            lines.append(_compact_table(metrics.iloc[::-1], rows=4))
+        # Financial metrics (stock_financial_abstract_ths) - isolated exception handling
+        try:
+            metrics = ak.stock_financial_abstract_ths(symbol=symbol, indicator="按报告期")
+            if metrics is not None and not metrics.empty:
+                latest = metrics.iloc[-1]
+                lines.append("")
+                lines.append("Latest key financial metrics:")
+                for col in [
+                    "报告期",
+                    "净利润",
+                    "净利润同比增长率",
+                    "扣非净利润",
+                    "营业总收入",
+                    "营业总收入同比增长率",
+                    "基本每股收益",
+                    "每股净资产",
+                    "每股经营现金流",
+                    "销售净利率",
+                    "销售毛利率",
+                    "净资产收益率",
+                    "资产负债率",
+                ]:
+                    if col in latest.index:
+                        lines.append(f"{col}: {_safe_numeric_value(latest[col])}")
+
+                lines.append("")
+                lines.append("Recent financial abstract:")
+                lines.append(_compact_table(metrics.iloc[::-1], rows=4))
+        except Exception as e:
+            errors.append(f"财务摘要获取失败: {type(e).__name__}: {e}")
 
         if not lines:
-            return f"No fundamentals data found for symbol '{info.canonical_ticker}'"
+            error_detail = "; ".join(errors) if errors else "unknown"
+            return f"No fundamentals data found for symbol '{info.canonical_ticker}' ({error_detail})"
 
-        return _header(f"Company Fundamentals for {info.canonical_ticker}") + "\n".join(lines)
+        result = _header(f"Company Fundamentals for {info.canonical_ticker}") + "\n".join(lines)
+        if errors:
+            result += f"\n\n# Warnings: {'; '.join(errors)}"
+        return result
 
     if info.market == "hk":
         symbol = _require_hk(ticker)
-        profile = ak.stock_hk_company_profile_em(symbol=symbol)
-        metrics = ak.stock_hk_financial_indicator_em(symbol=symbol)
-
         lines = []
-        if profile is not None and not profile.empty:
-            row = profile.iloc[0]
-            for col in profile.columns:
-                lines.append(f"{col}: {row[col]}")
+        errors = []
 
-        if metrics is not None and not metrics.empty:
-            row = metrics.iloc[0]
-            lines.append("")
-            lines.append("Latest key financial metrics:")
-            for col in metrics.columns:
-                lines.append(f"{col}: {row[col]}")
+        # HK company profile - isolated exception handling
+        try:
+            profile = ak.stock_hk_company_profile_em(symbol=symbol)
+            if profile is not None and not profile.empty:
+                row = profile.iloc[0]
+                for col in profile.columns:
+                    lines.append(f"{col}: {row[col]}")
+        except Exception as e:
+            errors.append(f"公司信息获取失败: {type(e).__name__}: {e}")
+
+        # HK financial indicators - isolated exception handling
+        try:
+            metrics = ak.stock_hk_financial_indicator_em(symbol=symbol)
+            if metrics is not None and not metrics.empty:
+                row = metrics.iloc[0]
+                lines.append("")
+                lines.append("Latest key financial metrics:")
+                for col in metrics.columns:
+                    lines.append(f"{col}: {row[col]}")
+        except Exception as e:
+            errors.append(f"财务指标获取失败: {type(e).__name__}: {e}")
 
         if not lines:
-            return f"No fundamentals data found for symbol '{info.canonical_ticker}'"
+            error_detail = "; ".join(errors) if errors else "unknown"
+            return f"No fundamentals data found for symbol '{info.canonical_ticker}' ({error_detail})"
 
-        return _header(f"Company Fundamentals for {info.canonical_ticker}") + "\n".join(lines)
+        result = _header(f"Company Fundamentals for {info.canonical_ticker}") + "\n".join(lines)
+        if errors:
+            result += f"\n\n# Warnings: {'; '.join(errors)}"
+        return result
 
     raise ValueError(f"Akshare fundamentals not supported for ticker '{ticker}'")
 
