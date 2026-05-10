@@ -222,10 +222,14 @@ def route_to_vendor(method: str, *args, **kwargs):
                 result = impl_func(*args, **kwargs)
 
                 # Check if result indicates failure
-                if isinstance(result, str) and ("失败" in result or "error" in result.lower()):
-                    attempted_errors.append(f"{vendor}:{func_name} returned error: {result[:100]}")
-                    logger.warning(f"[DataRouter] {vendor}:{func_name} returned error for {symbol}")
-                    continue
+                # Strip Warnings section to avoid false positives from partial-success results
+                if isinstance(result, str):
+                    # Remove trailing Warnings block (e.g. "\n\n# Warnings: ...")
+                    main_content = result.split("\n\n# Warnings:")[0]
+                    if "失败" in main_content or "error" in main_content.lower():
+                        attempted_errors.append(f"{vendor}:{func_name} returned error: {result[:100]}")
+                        logger.warning(f"[DataRouter] {vendor}:{func_name} returned error for {symbol}")
+                        continue
 
                 logger.info(f"[DataRouter] Success: {method} from {vendor}:{func_name} for {symbol}")
                 return result
